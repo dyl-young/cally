@@ -9,8 +9,8 @@ struct GoogleAccount: Codable, Equatable {
     private static let primaryAccountKey = "primaryAccountID"
 
     static func loadFromKeychain() -> GoogleAccount? {
-        guard let id = KeychainStore.get(primaryAccountKey),
-              let json = KeychainStore.get("account.\(id)"),
+        guard let id = SecretsStore.get(primaryAccountKey),
+              let json = SecretsStore.get("account.\(id)"),
               let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(GoogleAccount.self, from: data)
     }
@@ -18,16 +18,16 @@ struct GoogleAccount: Codable, Equatable {
     func saveAsPrimary() {
         if let data = try? JSONEncoder().encode(self),
            let json = String(data: data, encoding: .utf8) {
-            KeychainStore.set(json, key: "account.\(id)")
-            KeychainStore.set(id, key: Self.primaryAccountKey)
+            SecretsStore.set(json, key: "account.\(id)")
+            SecretsStore.set(id, key: Self.primaryAccountKey)
         }
     }
 
     static func clearPrimary() {
-        guard let id = KeychainStore.get(primaryAccountKey) else { return }
-        KeychainStore.delete("account.\(id)")
-        KeychainStore.delete("tokens.\(id)")
-        KeychainStore.delete(primaryAccountKey)
+        guard let id = SecretsStore.get(primaryAccountKey) else { return }
+        SecretsStore.delete("account.\(id)")
+        SecretsStore.delete("tokens.\(id)")
+        SecretsStore.delete(primaryAccountKey)
     }
 }
 
@@ -40,7 +40,7 @@ struct OAuthTokens: Codable {
     var isExpired: Bool { Date() >= expiresAt.addingTimeInterval(-30) }
 
     static func load(for accountID: String) -> OAuthTokens? {
-        guard let json = KeychainStore.get("tokens.\(accountID)"),
+        guard let json = SecretsStore.get("tokens.\(accountID)"),
               let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(OAuthTokens.self, from: data)
     }
@@ -48,7 +48,7 @@ struct OAuthTokens: Codable {
     func save(for accountID: String) {
         if let data = try? JSONEncoder().encode(self),
            let json = String(data: data, encoding: .utf8) {
-            KeychainStore.set(json, key: "tokens.\(accountID)")
+            SecretsStore.set(json, key: "tokens.\(accountID)")
         }
     }
 }

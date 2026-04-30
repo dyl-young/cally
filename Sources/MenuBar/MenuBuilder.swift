@@ -106,7 +106,8 @@ struct MenuBuilder {
 
     private func eventItem(_ event: CalendarEvent) -> NSMenuItem {
         let item = NSMenuItem()
-        item.view = EventMenuItemView(event: event, onClick: onOpenEvent)
+        item.attributedTitle = eventAttributedTitle(event)
+        item.image = colourBarImage(color: event.calendarColor)
         item.target = MenuActionForwarder.shared
         item.action = #selector(MenuActionForwarder.invoke(_:))
         item.representedObject = MenuAction(block: { [onOpenEvent] in onOpenEvent(event) })
@@ -115,11 +116,50 @@ struct MenuBuilder {
 
     private func meetItem(_ event: CalendarEvent) -> NSMenuItem {
         let item = NSMenuItem()
-        item.view = MeetMenuItemView(event: event, onClick: onJoinMeet)
+        item.title = "Join Google Meet meeting"
+        if let icon = NSImage(named: "GoogleMeet") {
+            icon.isTemplate = false
+            icon.size = NSSize(width: 18, height: 18)
+            item.image = icon
+        }
+        item.indentationLevel = 1
         item.target = MenuActionForwarder.shared
         item.action = #selector(MenuActionForwarder.invoke(_:))
         item.representedObject = MenuAction(block: { [onJoinMeet] in onJoinMeet(event) })
         return item
+    }
+
+    private func eventAttributedTitle(_ event: CalendarEvent) -> NSAttributedString {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        let timeStr = formatter.string(from: event.start)
+
+        let timeFont = NSFont.monospacedDigitSystemFont(
+            ofSize: NSFont.systemFontSize,
+            weight: .regular
+        )
+        let titleFont = NSFont.menuFont(ofSize: NSFont.systemFontSize)
+
+        let result = NSMutableAttributedString()
+        result.append(NSAttributedString(string: timeStr, attributes: [.font: timeFont]))
+        result.append(NSAttributedString(string: "  ·  ", attributes: [.font: titleFont]))
+        result.append(NSAttributedString(string: event.title, attributes: [.font: titleFont]))
+        return result
+    }
+
+    /// 16×16 image with the calendar colour rendered as a 4×16 rounded bar flush-left.
+    /// Using the standard menu icon size keeps native padding/alignment intact.
+    private func colourBarImage(color: NSColor) -> NSImage {
+        let size = NSSize(width: 16, height: 16)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        color.setFill()
+        let bar = NSRect(x: 0, y: 0, width: 4, height: 16)
+        NSBezierPath(roundedRect: bar, xRadius: 2, yRadius: 2).fill()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 
     private func actionItem(

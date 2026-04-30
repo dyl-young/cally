@@ -1,9 +1,10 @@
 import Foundation
 
 enum AuthConfig {
-    /// Google OAuth Desktop client ID. Provided via `.env` and generated into `Sources/Generated/Secrets.swift`.
-    /// See README.md and `scripts/generate-secrets.sh`.
+    /// Google OAuth Desktop client. Provided via `.env` and generated into `Sources/Generated/Secrets.swift`.
+    /// Google's Desktop OAuth requires the client_secret in token exchange even with PKCE.
     static let clientID: String = Secrets.googleClientID
+    static let clientSecret: String = Secrets.googleClientSecret
 
     static let scopes: [String] = [
         "https://www.googleapis.com/auth/calendar.readonly",

@@ -82,6 +82,7 @@ final class GoogleAuth: NSObject {
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let body = [
             "client_id": AuthConfig.clientID,
+            "client_secret": AuthConfig.clientSecret,
             "refresh_token": tokens.refreshToken,
             "grant_type": "refresh_token"
         ]
@@ -116,6 +117,7 @@ final class GoogleAuth: NSObject {
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let body = [
             "client_id": AuthConfig.clientID,
+            "client_secret": AuthConfig.clientSecret,
             "code": code,
             "code_verifier": verifier,
             "grant_type": "authorization_code",

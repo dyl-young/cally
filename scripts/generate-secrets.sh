@@ -18,6 +18,7 @@ OUT_FILE="${OUT_DIR}/Secrets.swift"
 mkdir -p "${OUT_DIR}"
 
 CALLY_GOOGLE_CLIENT_ID=""
+CALLY_GOOGLE_CLIENT_SECRET=""
 
 if [ -f "${ENV_FILE}" ]; then
     while IFS='=' read -r key value || [ -n "${key}" ]; do
@@ -30,6 +31,7 @@ if [ -f "${ENV_FILE}" ]; then
         value="${value%\'}"; value="${value#\'}"
         case "${key}" in
             CALLY_GOOGLE_CLIENT_ID) CALLY_GOOGLE_CLIENT_ID="${value}" ;;
+            CALLY_GOOGLE_CLIENT_SECRET) CALLY_GOOGLE_CLIENT_SECRET="${value}" ;;
         esac
     done < "${ENV_FILE}"
 fi
@@ -37,6 +39,7 @@ fi
 NEW_CONTENT="// Auto-generated from .env by scripts/generate-secrets.sh — do not edit.
 enum Secrets {
     static let googleClientID = \"${CALLY_GOOGLE_CLIENT_ID}\"
+    static let googleClientSecret = \"${CALLY_GOOGLE_CLIENT_SECRET}\"
 }
 "
 

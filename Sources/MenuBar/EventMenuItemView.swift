@@ -84,11 +84,13 @@ final class EventMenuItemView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let highlighted = enclosingMenuItem?.isHighlighted ?? false
         if highlighted {
-            NSColor.selectedMenuItemColor.setFill()
-            bounds.fill()
-            timeLabel.textColor = .selectedMenuItemTextColor
-            titleLabel.textColor = .selectedMenuItemTextColor
-            colourBar.layer?.backgroundColor = NSColor.selectedMenuItemTextColor.withAlphaComponent(0.9).cgColor
+            let pill = bounds.insetBy(dx: 5, dy: 0)
+            let path = NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4)
+            NSColor.controlAccentColor.setFill()
+            path.fill()
+            timeLabel.textColor = .white
+            titleLabel.textColor = .white
+            colourBar.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.95).cgColor
         } else {
             timeLabel.textColor = .labelColor
             titleLabel.textColor = .labelColor

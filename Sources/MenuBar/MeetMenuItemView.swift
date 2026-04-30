@@ -69,9 +69,11 @@ final class MeetMenuItemView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let highlighted = enclosingMenuItem?.isHighlighted ?? false
         if highlighted {
-            NSColor.selectedMenuItemColor.setFill()
-            bounds.fill()
-            label.textColor = .selectedMenuItemTextColor
+            let pill = bounds.insetBy(dx: 5, dy: 0)
+            let path = NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4)
+            NSColor.controlAccentColor.setFill()
+            path.fill()
+            label.textColor = .white
         } else {
             label.textColor = .labelColor
         }

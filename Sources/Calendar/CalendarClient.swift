@@ -17,7 +17,8 @@ struct EventListPage {
 final class CalendarClient {
     private let auth = GoogleAuth.shared
     private let session = URLSession.shared
-    private var calendarColors: [String: String] = [:]
+    /// Cached background colours keyed by `CalendarRef` so two accounts can share an ID without collision.
+    private var calendarColors: [CalendarRef: String] = [:]
 
     func listCalendars(account: GoogleAccount) async throws -> [GoogleCalendarSummary] {
         let tokens = try await auth.refreshIfNeeded(account: account)
@@ -29,15 +30,14 @@ final class CalendarClient {
         try ensureOK(response, data: data)
         struct ListResp: Decodable { let items: [GoogleCalendarSummary] }
         let resp = try JSONDecoder().decode(ListResp.self, from: data)
-        for cal in resp.items {
-            if let bg = cal.backgroundColor { calendarColors[cal.id] = bg }
+        var stamped = resp.items
+        for i in stamped.indices {
+            stamped[i].accountID = account.id
+            if let bg = stamped[i].backgroundColor {
+                calendarColors[stamped[i].ref] = bg
+            }
         }
-        return resp.items
-    }
-
-    func primaryCalendarID(account: GoogleAccount) async throws -> String {
-        let cals = try await listCalendars(account: account)
-        return cals.first(where: { $0.primary == true })?.id ?? "primary"
+        return stamped
     }
 
     func listEvents(
@@ -80,7 +80,8 @@ final class CalendarClient {
         decoder.dateDecodingStrategy = .iso8601
         let resp = try decoder.decode(GoogleEventsListResponse.self, from: data)
 
-        let calColor = calendarColors[calendarID]
+        let ref = CalendarRef(accountID: account.id, calendarID: calendarID)
+        let calColor = calendarColors[ref]
         var events: [CalendarEvent] = []
         var deleted: [String] = []
         for item in resp.items {
@@ -88,7 +89,11 @@ final class CalendarClient {
                 deleted.append(item.id)
                 continue
             }
-            guard let parsed = item.toEvent(calendarID: calendarID, calendarColorHex: calColor) else { continue }
+            guard let parsed = item.toEvent(
+                accountID: account.id,
+                calendarID: calendarID,
+                calendarColorHex: calColor
+            ) else { continue }
             events.append(parsed)
         }
 
@@ -149,7 +154,7 @@ private struct GoogleEventItem: Decodable {
     let htmlLink: String?
     let attendees: [Attendee]?
 
-    func toEvent(calendarID: String, calendarColorHex: String?) -> CalendarEvent? {
+    func toEvent(accountID: String, calendarID: String, calendarColorHex: String?) -> CalendarEvent? {
         guard let start, let end else { return nil }
         let isAllDay = start.date != nil && start.dateTime == nil
         let startDate: Date?
@@ -175,6 +180,7 @@ private struct GoogleEventItem: Decodable {
 
         return CalendarEvent(
             id: id,
+            accountID: accountID,
             calendarId: calendarID,
             title: summary ?? "(No title)",
             start: s,

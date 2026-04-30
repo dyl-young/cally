@@ -11,7 +11,7 @@ enum EventCache {
 
     struct Payload: Codable {
         var events: [CalendarEvent]
-        var syncTokens: [String: String]
+        var syncTokens: [CalendarRef: String]
         var lastSync: Date
     }
 

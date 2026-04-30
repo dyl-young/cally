@@ -66,7 +66,6 @@ final class GoogleAuth: NSObject {
 
         let tokens = try await exchangeCode(code, verifier: verifier, redirectURI: redirectURI)
         let account = try await fetchUserInfo(accessToken: tokens.accessToken)
-        account.saveAsPrimary()
         tokens.save(for: account.id)
         return (account, tokens)
     }
@@ -108,7 +107,7 @@ final class GoogleAuth: NSObject {
             req.httpBody = ["token": tokens.refreshToken].formURLEncoded()
             _ = try? await URLSession.shared.data(for: req)
         }
-        GoogleAccount.clearPrimary()
+        GoogleAccount.remove(id: account.id)
     }
 
     private func exchangeCode(_ code: String, verifier: String, redirectURI: String) async throws -> OAuthTokens {

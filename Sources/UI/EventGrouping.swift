@@ -7,8 +7,12 @@ struct EventSection {
 }
 
 enum EventGrouping {
-    /// Groups events into sections matching Notion: "Ending in Xm" (current event),
-    /// "Today", "Tomorrow", and a named day for day-3 (e.g. "Fri 1 May").
+    /// Promote the next future event into its own "Upcoming in X min" section if it starts
+    /// within this window. Matches Notion's behaviour.
+    static let upcomingThreshold: TimeInterval = 30 * 60
+
+    /// Groups events into sections: "Ending in Xm" (in-progress), "Upcoming in X min" (next event
+    /// within 30 min), "Today", "Tomorrow", named day-3.
     static func group(events: [CalendarEvent], now: Date = Date()) -> [EventSection] {
         var sections: [EventSection] = []
         let cal = Calendar.current
@@ -25,9 +29,22 @@ enum EventGrouping {
             sections.append(EventSection(id: "now", title: label, events: inProgress))
         }
 
-        // Today (excluding in-progress)
+        // Upcoming (next future event within threshold)
+        var upcomingID: String? = nil
+        if let next = events.first(where: { $0.start > now && !$0.isInProgress }) {
+            let until = next.start.timeIntervalSince(now)
+            if until <= upcomingThreshold {
+                let mins = max(1, Int(ceil(until / 60)))
+                let label = "Upcoming in \(mins) min"
+                sections.append(EventSection(id: "upcoming", title: label, events: [next]))
+                upcomingID = next.id
+            }
+        }
+
+        // Today (excluding in-progress and the promoted upcoming event)
         let todayEvents = events.filter {
             !$0.isInProgress &&
+            $0.id != upcomingID &&
             $0.start >= now &&
             $0.start < tomorrow
         }

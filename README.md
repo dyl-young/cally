@@ -53,6 +53,33 @@ open Cally.xcodeproj
 
 Hit ⌘R in Xcode. The calendar icon appears in your menu bar — click it, sign in with Google, then your events will appear.
 
+## Install (release build)
+
+The Xcode-run build is debug-configured and tied to Xcode's lifetime — quit Xcode and the menu bar icon goes with it. To run Cally as a real installed app:
+
+First, quit any running Cally instance from the menu bar (otherwise `ditto` will overwrite a binary that's still in use). Then, from the project root:
+
+Build a Release-configured `.app` into a scratch derived-data dir:
+
+```sh
+xcodebuild -project Cally.xcodeproj -scheme Cally -configuration Release \
+    -derivedDataPath /tmp/cally-release build
+```
+
+Copy the bundle into `/Applications` (`ditto` preserves macOS metadata better than `cp -R`):
+
+```sh
+ditto /tmp/cally-release/Build/Products/Release/Cally.app /Applications/Cally.app
+```
+
+Launch the installed copy:
+
+```sh
+open /Applications/Cally.app
+```
+
+Finally, in **Cally → Settings**, toggle **Launch at login** off then on. `SMAppService.mainApp` binds the login item to the bundle's path, so it needs re-registering against `/Applications/Cally.app` after the move.
+
 ## Architecture
 
 ```

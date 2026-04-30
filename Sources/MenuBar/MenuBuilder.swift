@@ -50,7 +50,7 @@ struct MenuBuilder {
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
-            title: "Quit Cally",
+            title: "Quit",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -130,6 +130,10 @@ struct MenuBuilder {
         return item
     }
 
+    /// Max characters of the event title shown in a menu row. Beyond this the title is truncated
+    /// with an ellipsis so the menu doesn't widen indefinitely for long meeting names.
+    private static let eventTitleMaxChars = 40
+
     private func eventAttributedTitle(_ event: CalendarEvent) -> NSAttributedString {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -142,10 +146,17 @@ struct MenuBuilder {
         )
         let titleFont = NSFont.menuFont(ofSize: NSFont.systemFontSize)
 
+        let truncatedTitle: String = {
+            let max = Self.eventTitleMaxChars
+            return event.title.count > max
+                ? String(event.title.prefix(max - 1)) + "…"
+                : event.title
+        }()
+
         let result = NSMutableAttributedString()
         result.append(NSAttributedString(string: timeStr, attributes: [.font: timeFont]))
         result.append(NSAttributedString(string: "  ·  ", attributes: [.font: titleFont]))
-        result.append(NSAttributedString(string: event.title, attributes: [.font: titleFont]))
+        result.append(NSAttributedString(string: truncatedTitle, attributes: [.font: titleFont]))
         return result
     }
 

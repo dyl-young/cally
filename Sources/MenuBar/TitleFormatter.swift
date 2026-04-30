@@ -10,7 +10,7 @@ enum TitleFormatter {
     static func format(events: [CalendarEvent], now: Date = Date()) -> String? {
         guard let target = pickTarget(events: events, now: now) else { return nil }
         let conflictSuffix = makeConflictSuffix(target: target, events: events, now: now)
-        let truncated = truncate(target.title) + conflictSuffix
+        let truncated = responsePrefix(for: target) + truncate(target.title) + conflictSuffix
 
         if target.isInProgress {
             let remaining = target.end.timeIntervalSince(now)
@@ -42,14 +42,23 @@ enum TitleFormatter {
     /// the next future event. When multiple events tie at the same start (or are simultaneously in
     /// progress), uses a stable tiebreaker so the title doesn't flicker between events on each refresh.
     static func pickTarget(events: [CalendarEvent], now: Date = Date()) -> CalendarEvent? {
-        let inProgress = events.filter { $0.isInProgress }
+        let active = events.filter { $0.myResponseStatus != "declined" }
+        let inProgress = active.filter { $0.isInProgress }
         if !inProgress.isEmpty {
             return chooseStable(from: inProgress)
         }
-        let future = events.filter { $0.start > now }
+        let future = active.filter { $0.start > now }
         guard let earliest = future.min(by: { $0.start < $1.start }) else { return nil }
         let tied = future.filter { $0.start == earliest.start }
         return chooseStable(from: tied)
+    }
+
+    private static func responsePrefix(for event: CalendarEvent) -> String {
+        switch event.myResponseStatus {
+        case "needsAction": return "? "
+        case "tentative": return "?? "
+        default: return ""
+        }
     }
 
     /// Tiebreaker: primary calendar > shorter event > alphabetical.
@@ -67,11 +76,12 @@ enum TitleFormatter {
 
     /// "+N" suffix when the picked event has simultaneous siblings.
     private static func makeConflictSuffix(target: CalendarEvent, events: [CalendarEvent], now: Date) -> String {
+        let active = events.filter { $0.myResponseStatus != "declined" }
         let count: Int
         if target.isInProgress {
-            count = events.filter { $0.isInProgress && $0.id != target.id }.count
+            count = active.filter { $0.isInProgress && $0.id != target.id }.count
         } else {
-            count = events.filter { $0.id != target.id && $0.start == target.start && $0.start > now }.count
+            count = active.filter { $0.id != target.id && $0.start == target.start && $0.start > now }.count
         }
         return count > 0 ? " +\(count)" : ""
     }

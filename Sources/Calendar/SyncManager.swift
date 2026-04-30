@@ -225,11 +225,7 @@ final class SyncManager: ObservableObject {
     }
 
     private func filtered(_ events: [CalendarEvent]) -> [CalendarEvent] {
-        events.filter { ev in
-            if ev.myResponseStatus == "declined" { return false }
-            if ev.isAllDay { return false }
-            return true
-        }
+        events.filter { !$0.isAllDay }
     }
 
     private func scheduleTimer() {

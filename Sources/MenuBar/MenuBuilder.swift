@@ -107,11 +107,21 @@ struct MenuBuilder {
 
     private func eventItem(_ event: CalendarEvent) -> NSMenuItem {
         let item = NSMenuItem()
-        item.attributedTitle = eventAttributedTitle(event)
-        item.image = colourBarImage(color: event.calendarColor)
-        item.target = MenuActionForwarder.shared
-        item.action = #selector(MenuActionForwarder.invoke(_:))
-        item.representedObject = MenuAction(block: { [onOpenEvent] in onOpenEvent(event) })
+        if event.myResponseStatus == "needsAction" {
+            // Dotted border requires a custom view — NSAttributedString has no border attribute.
+            item.view = EventMenuItemView(
+                timeStr: eventTimeString(event),
+                titleStr: truncatedEventTitle(event),
+                leadingColor: event.calendarColor,
+                onClick: { [onOpenEvent] in onOpenEvent(event) }
+            )
+        } else {
+            item.attributedTitle = eventAttributedTitle(event)
+            item.image = colourBarImage(color: event.calendarColor)
+            item.target = MenuActionForwarder.shared
+            item.action = #selector(MenuActionForwarder.invoke(_:))
+            item.representedObject = MenuAction(block: { [onOpenEvent] in onOpenEvent(event) })
+        }
         return item
     }
 
@@ -123,7 +133,6 @@ struct MenuBuilder {
             icon.size = NSSize(width: 18, height: 18)
             item.image = icon
         }
-        item.indentationLevel = 1
         item.target = MenuActionForwarder.shared
         item.action = #selector(MenuActionForwarder.invoke(_:))
         item.representedObject = MenuAction(block: { [onJoinMeet] in onJoinMeet(event) })
@@ -132,31 +141,44 @@ struct MenuBuilder {
 
     /// Max characters of the event title shown in a menu row. Beyond this the title is truncated
     /// with an ellipsis so the menu doesn't widen indefinitely for long meeting names.
-    private static let eventTitleMaxChars = 40
+    private static let eventTitleMaxChars = 32
 
-    private func eventAttributedTitle(_ event: CalendarEvent) -> NSAttributedString {
+    private func eventTimeString(_ event: CalendarEvent) -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         formatter.dateStyle = .none
-        let timeStr = formatter.string(from: event.start)
+        return formatter.string(from: event.start)
+    }
 
+    private func truncatedEventTitle(_ event: CalendarEvent) -> String {
+        let max = Self.eventTitleMaxChars
+        return event.title.count > max
+            ? String(event.title.prefix(max - 1)) + "…"
+            : event.title
+    }
+
+    private func eventAttributedTitle(_ event: CalendarEvent) -> NSAttributedString {
         let timeFont = NSFont.monospacedDigitSystemFont(
             ofSize: NSFont.systemFontSize,
             weight: .regular
         )
         let titleFont = NSFont.menuFont(ofSize: NSFont.systemFontSize)
 
-        let truncatedTitle: String = {
-            let max = Self.eventTitleMaxChars
-            return event.title.count > max
-                ? String(event.title.prefix(max - 1)) + "…"
-                : event.title
-        }()
-
         let result = NSMutableAttributedString()
-        result.append(NSAttributedString(string: timeStr, attributes: [.font: timeFont]))
+        result.append(NSAttributedString(string: eventTimeString(event), attributes: [.font: timeFont]))
         result.append(NSAttributedString(string: "  ·  ", attributes: [.font: titleFont]))
-        result.append(NSAttributedString(string: truncatedTitle, attributes: [.font: titleFont]))
+        result.append(NSAttributedString(string: truncatedEventTitle(event), attributes: [.font: titleFont]))
+
+        if event.myResponseStatus == "declined" {
+            let fullRange = NSRange(location: 0, length: result.length)
+            result.addAttribute(
+                .strikethroughStyle,
+                value: NSUnderlineStyle.single.rawValue,
+                range: fullRange
+            )
+            result.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: fullRange)
+        }
+
         return result
     }
 

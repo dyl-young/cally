@@ -28,11 +28,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         rebuildMenu()
         refreshTitle()
 
-        appState.$events
-            .merge(with: appState.$authStatus.map { _ in [] }.eraseToAnyPublisher())
-            .merge(with: appState.$isOffline.map { _ in [] }.eraseToAnyPublisher())
-            .sink { [weak self] _ in self?.scheduleRebuild() }
-            .store(in: &cancellables)
+        Publishers.Merge4(
+            appState.$events.map { _ in () }.eraseToAnyPublisher(),
+            appState.$accounts.map { _ in () }.eraseToAnyPublisher(),
+            appState.$accountsNeedingReconnect.map { _ in () }.eraseToAnyPublisher(),
+            appState.$isOffline.map { _ in () }.eraseToAnyPublisher()
+        )
+        .sink { [weak self] _ in self?.scheduleRebuild() }
+        .store(in: &cancellables)
 
         appState.$events
             .sink { [weak self] _ in self?.refreshTitle() }
@@ -76,12 +79,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             appState: appState,
             onSignIn: { [weak self] in
                 guard let self else { return }
-                Task { await SignInController.signIn(appState: self.appState) }
+                Task { await SignInController.addAccount(appState: self.appState) }
             },
-            onSignOut: { [weak self] in
-                guard let self else { return }
-                Task { await SignInController.signOut(appState: self.appState) }
-            },
+            onSignOut: { /* per-account sign-out handled in Settings */ },
             onOpenEvent: { [weak self] ev in
                 guard let self else { return }
                 if let s = ev.htmlLink, let u = URL(string: s) { NSWorkspace.shared.open(u) }

@@ -8,27 +8,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Account") {
-                if let account = appState.currentAccount {
-                    LabeledContent("Signed in") { Text(account.email) }
-                    Button("Sign out") {
-                        Task { await SignInController.signOut(appState: appState) }
-                    }
-                } else {
-                    Text("Not signed in").foregroundStyle(.secondary)
-                    Button("Sign in with Google") {
-                        Task { await SignInController.signIn(appState: appState) }
-                    }
-                }
-            }
-
-            if !appState.calendars.isEmpty {
-                Section("Calendars") {
-                    ForEach(appState.calendars, id: \.id) { cal in
-                        CalendarToggleRow(calendar: cal)
-                    }
-                }
-            }
+            accountsSection
 
             Section("General") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
@@ -55,7 +35,63 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 480)
+        .frame(width: 520, height: 560)
+    }
+
+    @ViewBuilder
+    private var accountsSection: some View {
+        if appState.accounts.isEmpty {
+            Section("Accounts") {
+                Button {
+                    Task { await SignInController.addAccount(appState: appState) }
+                } label: {
+                    Label("Sign in with Google", systemImage: "person.crop.circle.badge.plus")
+                }
+                .disabled(appState.addingAccount)
+                if let err = appState.addAccountError {
+                    Text(err).font(.caption).foregroundStyle(.red)
+                }
+            }
+        } else {
+            ForEach(appState.accounts) { account in
+                AccountSection(account: account)
+            }
+            Section {
+                Button {
+                    Task { await SignInController.addAccount(appState: appState) }
+                } label: {
+                    Label("Add Google account", systemImage: "plus.circle")
+                }
+                .disabled(appState.addingAccount)
+                if let err = appState.addAccountError {
+                    Text(err).font(.caption).foregroundStyle(.red)
+                }
+            }
+        }
+    }
+}
+
+private struct AccountSection: View {
+    let account: GoogleAccount
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        Section(account.email) {
+            if appState.accountsNeedingReconnect.contains(account.id) {
+                Button("Reconnect") {
+                    Task { await SignInController.addAccount(appState: appState) }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            ForEach(appState.calendarsForAccount(account.id), id: \.ref) { cal in
+                CalendarToggleRow(calendar: cal)
+            }
+
+            Button("Sign out") {
+                Task { await SignInController.removeAccount(account, appState: appState) }
+            }
+        }
     }
 }
 
@@ -83,11 +119,11 @@ private struct CalendarToggleRow: View {
 
     private var binding: Binding<Bool> {
         Binding(
-            get: { appState.selectedCalendarIDs.contains(calendar.id) },
+            get: { appState.selectedCalendars.contains(calendar.ref) },
             set: { isOn in
-                var s = appState.selectedCalendarIDs
-                if isOn { s.insert(calendar.id) } else { s.remove(calendar.id) }
-                appState.selectedCalendarIDs = s
+                var s = appState.selectedCalendars
+                if isOn { s.insert(calendar.ref) } else { s.remove(calendar.ref) }
+                appState.selectedCalendars = s
             }
         )
     }

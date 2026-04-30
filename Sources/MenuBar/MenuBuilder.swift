@@ -14,18 +14,18 @@ struct MenuBuilder {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        switch appState.authStatus {
-        case .signedOut, .signingIn:
+        if appState.accounts.isEmpty {
             menu.addItem(actionItem(title: "Sign in with Google", action: onSignIn))
-        case .needsReconnect:
-            menu.addItem(actionItem(title: "Reconnect to Google", action: onSignIn))
-        case .signedIn:
+        } else {
+            for account in appState.accounts where appState.accountsNeedingReconnect.contains(account.id) {
+                menu.addItem(actionItem(title: "Reconnect \(account.email)", action: onSignIn))
+            }
             appendEvents(to: menu)
         }
 
         menu.addItem(.separator())
 
-        if case .signedIn = appState.authStatus {
+        if !appState.accounts.isEmpty {
             let item = actionItem(
                 title: "Open Google Calendar",
                 action: onOpenCalendarWeb,

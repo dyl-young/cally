@@ -65,13 +65,20 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate(ignoringOtherApps: true)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
 
     func popoverDidShow(_ notification: Notification) {
         syncManager.setPopoverOpen(true)
+        appState.popoverShowCount += 1
+        // Make the SwiftUI hosting view first responder so @FocusState bindings can paint focus.
+        if let host = popover.contentViewController?.view {
+            DispatchQueue.main.async {
+                host.window?.makeFirstResponder(host)
+            }
+        }
     }
 
     func popoverDidClose(_ notification: Notification) {

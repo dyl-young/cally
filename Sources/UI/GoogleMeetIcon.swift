@@ -7,6 +7,7 @@ struct GoogleMeetIcon: View {
     var body: some View {
         Image("GoogleMeet")
             .resizable()
+            .renderingMode(.original)
             .interpolation(.high)
             .scaledToFit()
             .frame(width: size, height: size)

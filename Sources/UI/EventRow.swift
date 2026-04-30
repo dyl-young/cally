@@ -6,42 +6,47 @@ struct EventRow: View {
     let event: CalendarEvent
     let isFocused: Bool
 
+    @State private var isHovered = false
     @Environment(\.popoverDismiss) private var dismiss
+
+    private var isHighlighted: Bool { isFocused || isHovered }
 
     var body: some View {
         HStack(spacing: 8) {
             Rectangle()
-                .fill(Color(event.calendarColor))
+                .fill(isHighlighted ? Color.white.opacity(0.9) : Color(event.calendarColor))
                 .frame(width: 3)
                 .clipShape(RoundedRectangle(cornerRadius: 1.5))
 
             Text(formattedTime)
                 .font(.system(.body, design: .default).monospacedDigit())
-                .foregroundStyle(.primary)
 
             Text("·")
-                .foregroundStyle(.tertiary)
+                .opacity(isHighlighted ? 0.7 : 0.35)
 
             Text(event.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(.primary)
 
             Spacer(minLength: 4)
         }
-        .padding(.horizontal, 14)
+        .foregroundStyle(isHighlighted ? Color(NSColor.selectedMenuItemTextColor) : Color(NSColor.labelColor))
+        .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(highlight)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .onTapGesture { invoke() }
     }
 
     @ViewBuilder
     private var highlight: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(isFocused ? Color.accentColor.opacity(0.18) : Color.clear)
-            .padding(.horizontal, 6)
+        if isHighlighted {
+            Color(NSColor.selectedContentBackgroundColor)
+        } else {
+            Color.clear
+        }
     }
 
     private var formattedTime: String {
@@ -64,30 +69,27 @@ struct MeetJoinRow: View {
     let event: CalendarEvent
     let isFocused: Bool
 
+    @State private var isHovered = false
     @Environment(\.popoverDismiss) private var dismiss
+
+    private var isHighlighted: Bool { isFocused || isHovered }
 
     var body: some View {
         HStack(spacing: 8) {
             Spacer().frame(width: 3)
-            GoogleMeetIcon(size: 16)
+            GoogleMeetIcon(size: 14)
             Text("Join Google Meet meeting")
-                .foregroundStyle(.primary)
             Spacer(minLength: 4)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 14)
+        .foregroundStyle(isHighlighted ? Color(NSColor.selectedMenuItemTextColor) : Color(NSColor.labelColor))
+        .padding(.leading, 12)
+        .padding(.trailing, 12)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(highlight)
+        .background(isHighlighted ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .onTapGesture { invoke() }
-    }
-
-    @ViewBuilder
-    private var highlight: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(isFocused ? Color.accentColor.opacity(0.18) : Color.clear)
-            .padding(.horizontal, 6)
     }
 
     func invoke() {

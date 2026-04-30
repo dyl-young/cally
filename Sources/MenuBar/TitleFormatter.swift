@@ -42,10 +42,10 @@ enum TitleFormatter {
         s.count > titleMaxChars ? String(s.prefix(titleMaxChars - 1)) + "…" : s
     }
 
-    /// "1h 52m", "19m", "0m"
+    /// "1h 52m", "19m", "0m" — uses ceiling so 3m 45s reads as "4m" (matches Notion's behaviour
+    /// and avoids "you have N minutes" undercounting actual time remaining).
     static func formatDuration(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds.rounded())
-        let mins = max(0, total / 60)
+        let mins = max(0, Int(ceil(seconds / 60)))
         let h = mins / 60
         let m = mins % 60
         if h > 0 { return "\(h)h \(m)m" }

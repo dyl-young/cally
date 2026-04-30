@@ -16,22 +16,8 @@ struct PopoverRootView: View {
                 EventListView()
             }
         }
-        .frame(width: 320)
-    }
-}
-
-/// One selectable item in the popover. Drives keyboard navigation order and Enter activation.
-private struct PopoverItem: Identifiable {
-    let id: String
-    let kind: Kind
-    let action: () -> Void
-
-    enum Kind {
-        case event(CalendarEvent)
-        case meet(CalendarEvent)
-        case footer(label: String)
-        case settings
-        case quit
+        .frame(width: 300)
+        .background(VisualEffectView(material: .menu))
     }
 }
 
@@ -43,8 +29,7 @@ struct EventListView: View {
     @FocusState private var focusedID: String?
 
     var body: some View {
-        let items = buildItems()
-        let ids = items.map(\.id)
+        let ordered = orderedItemIDs
 
         VStack(alignment: .leading, spacing: 0) {
             if appState.isOffline {
@@ -54,8 +39,8 @@ struct EventListView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             }
 
             ScrollView {
@@ -63,13 +48,13 @@ struct EventListView: View {
                     ForEach(sections, id: \.id) { section in
                         SectionHeader(title: section.title)
                         ForEach(section.events) { ev in
-                            EventRow(event: ev, isFocused: focusedID == itemID(.event, ev.id))
+                            EventRow(event: ev, isFocused: focusedID == eventID(ev))
                                 .focusable()
-                                .focused($focusedID, equals: itemID(.event, ev.id))
+                                .focused($focusedID, equals: eventID(ev))
                             if ev.meetLink != nil {
-                                MeetJoinRow(event: ev, isFocused: focusedID == itemID(.meet, ev.id))
+                                MeetJoinRow(event: ev, isFocused: focusedID == meetID(ev))
                                     .focusable()
-                                    .focused($focusedID, equals: itemID(.meet, ev.id))
+                                    .focused($focusedID, equals: meetID(ev))
                             }
                         }
                     }
@@ -81,7 +66,7 @@ struct EventListView: View {
                             .padding(.vertical, 24)
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 4)
             }
             .frame(maxHeight: 420)
 
@@ -89,20 +74,22 @@ struct EventListView: View {
 
             FooterView(focusedID: $focusedID)
         }
-        .onKeyPress(.upArrow) { moveFocus(-1, in: ids); return .handled }
-        .onKeyPress(.downArrow) { moveFocus(1, in: ids); return .handled }
+        .focusEffectDisabled()
+        .onKeyPress(.upArrow) { moveFocus(-1, in: ordered); return .handled }
+        .onKeyPress(.downArrow) { moveFocus(1, in: ordered); return .handled }
         .onKeyPress(.return) {
-            if let id = focusedID, let item = items.first(where: { $0.id == id }) {
-                item.action()
+            if let id = focusedID, let action = actions[id] {
+                action()
                 return .handled
             }
             return .ignored
         }
         .onKeyPress(.escape) { dismiss(); return .handled }
-        .task {
-            if focusedID == nil { focusedID = ids.first }
+        .onAppear { focusedID = ordered.first }
+        .onChange(of: appState.popoverShowCount) { _, _ in
+            focusedID = ordered.first
         }
-        .onChange(of: ids) { _, newIDs in
+        .onChange(of: ordered) { _, newIDs in
             if let current = focusedID, !newIDs.contains(current) {
                 focusedID = newIDs.first
             } else if focusedID == nil {
@@ -115,34 +102,42 @@ struct EventListView: View {
         EventGrouping.group(events: appState.events, now: Date())
     }
 
-    private func buildItems() -> [PopoverItem] {
-        var items: [PopoverItem] = []
+    private var orderedItemIDs: [String] {
+        var ids: [String] = []
         for section in sections {
             for ev in section.events {
-                items.append(PopoverItem(
-                    id: itemID(.event, ev.id),
-                    kind: .event(ev),
-                    action: { openEvent(ev); dismiss() }
-                ))
+                ids.append(eventID(ev))
+                if ev.meetLink != nil { ids.append(meetID(ev)) }
+            }
+        }
+        ids.append(FooterID.calendar)
+        ids.append(FooterID.settings)
+        ids.append(FooterID.quit)
+        return ids
+    }
+
+    private var actions: [String: () -> Void] {
+        var dict: [String: () -> Void] = [:]
+        for section in sections {
+            for ev in section.events {
+                dict[eventID(ev)] = { openEvent(ev); dismiss() }
                 if ev.meetLink != nil {
-                    items.append(PopoverItem(
-                        id: itemID(.meet, ev.id),
-                        kind: .meet(ev),
-                        action: { joinMeet(ev); dismiss() }
-                    ))
+                    dict[meetID(ev)] = { joinMeet(ev); dismiss() }
                 }
             }
         }
-        items.append(PopoverItem(id: "footer.calendar", kind: .footer(label: "Open Google Calendar"), action: openCalendarWeb))
-        items.append(PopoverItem(id: "footer.settings", kind: .settings, action: {}))
-        items.append(PopoverItem(id: "footer.quit", kind: .quit, action: { NSApp.terminate(nil) }))
-        return items
+        dict[FooterID.calendar] = {
+            if let u = URL(string: "https://calendar.google.com") { NSWorkspace.shared.open(u) }
+            dismiss()
+        }
+        // Settings is handled by SettingsLink itself; no action here.
+        dict[FooterID.settings] = {}
+        dict[FooterID.quit] = { NSApp.terminate(nil) }
+        return dict
     }
 
-    private enum ItemKind { case event, meet }
-    private func itemID(_ kind: ItemKind, _ eventID: String) -> String {
-        "\(kind == .event ? "ev" : "meet").\(eventID)"
-    }
+    private func eventID(_ ev: CalendarEvent) -> String { "ev.\(ev.id)" }
+    private func meetID(_ ev: CalendarEvent) -> String { "meet.\(ev.id)" }
 
     private func moveFocus(_ delta: Int, in ids: [String]) {
         guard !ids.isEmpty else { return }
@@ -157,10 +152,12 @@ struct EventListView: View {
     private func joinMeet(_ ev: CalendarEvent) {
         if let url = ev.meetLink { NSWorkspace.shared.open(url) }
     }
-    private func openCalendarWeb() {
-        if let u = URL(string: "https://calendar.google.com") { NSWorkspace.shared.open(u) }
-        dismiss()
-    }
+}
+
+enum FooterID {
+    static let calendar = "footer.calendar"
+    static let settings = "footer.settings"
+    static let quit = "footer.quit"
 }
 
 private extension Comparable {
@@ -173,11 +170,11 @@ struct SectionHeader: View {
     let title: String
     var body: some View {
         Text(title)
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
     }
 }
 
@@ -200,7 +197,7 @@ struct ReconnectView: View {
             .buttonStyle(.borderedProminent)
         }
         .padding(24)
-        .frame(width: 320)
+        .frame(width: 300)
     }
 }
 
@@ -212,77 +209,75 @@ struct FooterView: View {
     var body: some View {
         VStack(spacing: 0) {
             FooterRow(
-                id: "footer.calendar",
                 label: "Open Google Calendar",
-                isFocused: focusedID == "footer.calendar",
+                isFocused: focusedID == FooterID.calendar,
                 action: {
                     if let u = URL(string: "https://calendar.google.com") { NSWorkspace.shared.open(u) }
                     dismiss()
                 }
             )
             .focusable()
-            .focused($focusedID, equals: "footer.calendar")
+            .focused($focusedID, equals: FooterID.calendar)
 
-            SettingsLinkRow(isFocused: focusedID == "footer.settings", onActivate: dismiss)
-                .focusable()
-                .focused($focusedID, equals: "footer.settings")
+            SettingsLinkRow(
+                isFocused: focusedID == FooterID.settings,
+                onActivate: dismiss
+            )
+            .focusable()
+            .focused($focusedID, equals: FooterID.settings)
 
             FooterRow(
-                id: "footer.quit",
                 label: "Quit Cally",
-                isFocused: focusedID == "footer.quit",
+                isFocused: focusedID == FooterID.quit,
                 action: { NSApp.terminate(nil) }
             )
             .focusable()
-            .focused($focusedID, equals: "footer.quit")
+            .focused($focusedID, equals: FooterID.quit)
         }
         .padding(.vertical, 4)
     }
 }
 
 struct FooterRow: View {
-    let id: String
     let label: String
     let isFocused: Bool
     let action: () -> Void
 
+    @State private var isHovered = false
+    private var isHighlighted: Bool { isFocused || isHovered }
+
     var body: some View {
         Text(label)
+            .foregroundStyle(isHighlighted ? Color(NSColor.selectedMenuItemTextColor) : Color(NSColor.labelColor))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isFocused ? Color.accentColor.opacity(0.18) : Color.clear)
-                    .padding(.horizontal, 8)
-            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(isHighlighted ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
             .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
             .onTapGesture { action() }
     }
 }
 
-/// Wraps SettingsLink so it gets the same look as other footer rows. SettingsLink is itself a
-/// Button, so we make it visually neutral and let the surrounding `.focused()` modifier drive
-/// keyboard navigation and Enter activation.
 struct SettingsLinkRow: View {
     let isFocused: Bool
     let onActivate: () -> Void
 
+    @State private var isHovered = false
+    private var isHighlighted: Bool { isFocused || isHovered }
+
     var body: some View {
         SettingsLink {
             Text("Settings…")
+                .foregroundStyle(isHighlighted ? Color(NSColor.selectedMenuItemTextColor) : Color(NSColor.labelColor))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isFocused ? Color.accentColor.opacity(0.18) : Color.clear)
-                        .padding(.horizontal, 8)
-                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(isHighlighted ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
                 .contentShape(Rectangle())
-                .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .simultaneousGesture(TapGesture().onEnded { onActivate() })
     }
 }

@@ -72,8 +72,7 @@ struct MenuBuilder {
             return
         }
 
-        for (i, section) in sections.enumerated() {
-            if i > 0 { menu.addItem(.separator()) }
+        for section in sections {
             menu.addItem(disabledHeader(section.title))
             for ev in section.events {
                 menu.addItem(eventItem(ev))

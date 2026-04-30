@@ -16,8 +16,13 @@ private final class AtomicFlag: @unchecked Sendable {
 /// Tiny loopback HTTP server used to receive the OAuth redirect on 127.0.0.1.
 /// Listens for one GET /callback?code=...&state=..., responds with a small HTML page,
 /// then yields the code via continuation.
+///
+/// All access to `continuation` and `expectedState` is serialised through `stateQueue`
+/// so that concurrent Network.framework callbacks (e.g. the real /callback racing a
+/// browser favicon probe) cannot double-resume the continuation.
 final class LoopbackServer: @unchecked Sendable {
     private let listener: NWListener
+    private let stateQueue = DispatchQueue(label: "cally.loopback.state")
     private var continuation: CheckedContinuation<String, Error>?
     private var expectedState: String?
 
@@ -28,7 +33,13 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     static func start() async throws -> LoopbackServer {
-        let listener = try NWListener(using: .tcp, on: .any)
+        // Bind to the loopback interface only. Without this, NWListener listens on
+        // all interfaces and any host on the LAN can race the browser to deliver a
+        // forged code on the ephemeral port.
+        let params = NWParameters.tcp
+        params.requiredInterfaceType = .loopback
+        params.acceptLocalOnly = true
+        let listener = try NWListener(using: params)
         let server = LoopbackServer(listener: listener)
 
         listener.newConnectionHandler = { [weak server] connection in
@@ -58,9 +69,11 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     func waitForCode(expectedState: String) async throws -> String {
-        self.expectedState = expectedState
-        return try await withCheckedThrowingContinuation { cont in
-            self.continuation = cont
+        try await withCheckedThrowingContinuation { cont in
+            stateQueue.async {
+                self.expectedState = expectedState
+                self.continuation = cont
+            }
         }
     }
 
@@ -70,12 +83,39 @@ final class LoopbackServer: @unchecked Sendable {
 
     private func handle(connection: NWConnection) {
         connection.start(queue: .global(qos: .userInitiated))
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
-            guard let self, let data, let request = String(data: data, encoding: .utf8) else {
+        receiveHeaders(on: connection, accumulated: Data())
+    }
+
+    /// Read until we've seen the end of the HTTP request headers (`\r\n\r\n`).
+    /// Network.framework can split a request across multiple receives; the previous
+    /// single-shot read assumed the whole request fitted in one TCP chunk.
+    private func receiveHeaders(on connection: NWConnection, accumulated: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
+            guard let self else {
                 connection.cancel()
                 return
             }
-            self.process(request: request, on: connection)
+            if error != nil {
+                connection.cancel()
+                return
+            }
+            var buffer = accumulated
+            if let data { buffer.append(data) }
+
+            let terminator = Data([0x0D, 0x0A, 0x0D, 0x0A]) // \r\n\r\n
+            if buffer.range(of: terminator) != nil {
+                let request = String(data: buffer, encoding: .utf8) ?? ""
+                self.process(request: request, on: connection)
+                return
+            }
+
+            // Cap buffer to avoid an attacker streaming bytes forever.
+            if buffer.count >= 16_384 || isComplete {
+                self.send(html: "<h1>Bad request</h1>", status: "400 Bad Request", to: connection)
+                return
+            }
+
+            self.receiveHeaders(on: connection, accumulated: buffer)
         }
     }
 
@@ -88,28 +128,59 @@ final class LoopbackServer: @unchecked Sendable {
         }
         let path = String(parts[1])
         let url = URL(string: "http://127.0.0.1\(path)")
-        let items = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+        let components = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        let pathOnly = components?.path ?? path
+        let items = components?.queryItems ?? []
+
+        // Ignore anything that isn't the OAuth callback (favicon probes, browser
+        // pre-flights, etc.). Resuming the continuation for these would kill sign-in
+        // before the real /callback arrives.
+        guard pathOnly == "/callback" else {
+            send(html: "<h1>Not found</h1>", status: "404 Not Found", to: connection)
+            return
+        }
+
         let code = items.first(where: { $0.name == "code" })?.value
         let state = items.first(where: { $0.name == "state" })?.value
         let error = items.first(where: { $0.name == "error" })?.value
 
-        if let code, state == expectedState {
-            let body = """
-            <!doctype html>
-            <html><head><meta charset="utf-8"><title>Cally — Signed In</title>
-            <style>body{font-family:-apple-system,Helvetica;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.card{text-align:center;padding:40px}h1{margin:0 0 8px;font-weight:600}p{opacity:.7}</style>
-            </head><body><div class="card"><h1>Signed in to Cally</h1><p>You can close this window.</p></div></body></html>
-            """
-            send(html: body, status: "200 OK", to: connection)
-            continuation?.resume(returning: code)
-            continuation = nil
-        } else {
-            let body = """
-            <h1>Sign-in failed</h1><p>\(error ?? "Unknown error"). You can close this window.</p>
-            """
-            send(html: body, status: "400 Bad Request", to: connection)
-            continuation?.resume(throwing: AuthError.noAuthorizationCode)
-            continuation = nil
+        // Only resume on a definitive answer (success or explicit error). Anything
+        // else (missing code, missing state, no error) is treated as a malformed
+        // probe and ignored.
+        guard code != nil || error != nil else {
+            send(html: "<h1>Bad request</h1>", status: "400 Bad Request", to: connection)
+            return
+        }
+
+        stateQueue.async { [weak self] in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            guard let cont = self.continuation else {
+                self.send(html: "<h1>Not expected</h1>", status: "400 Bad Request", to: connection)
+                return
+            }
+            self.continuation = nil
+            let expected = self.expectedState
+            self.expectedState = nil
+
+            if let code, state == expected {
+                let body = """
+                <!doctype html>
+                <html><head><meta charset="utf-8"><title>Cally — Signed In</title>
+                <style>body{font-family:-apple-system,Helvetica;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.card{text-align:center;padding:40px}h1{margin:0 0 8px;font-weight:600}p{opacity:.7}</style>
+                </head><body><div class="card"><h1>Signed in to Cally</h1><p>You can close this window.</p></div></body></html>
+                """
+                self.send(html: body, status: "200 OK", to: connection)
+                cont.resume(returning: code)
+            } else {
+                let body = """
+                <h1>Sign-in failed</h1><p>\(error ?? "Unknown error"). You can close this window.</p>
+                """
+                self.send(html: body, status: "400 Bad Request", to: connection)
+                cont.resume(throwing: AuthError.noAuthorizationCode)
+            }
         }
     }
 

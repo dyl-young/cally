@@ -40,49 +40,47 @@ cp .env.example .env
 
 `.env` is gitignored. Google's Desktop OAuth flow requires the client secret in the token exchange even with PKCE, so both values are needed. Treat the secret as low-sensitivity (it's "public" in the installed-app sense) but keep it out of source.
 
-### 3. Bootstrap and open the project
+### 3. Bootstrap
 
 ```sh
 make setup           # generates Sources/Generated/Secrets.swift then Cally.xcodeproj
-open Cally.xcodeproj
 ```
 
-`Secrets.swift` is regenerated automatically as a pre-build phase, so changes to `.env` are picked up on every build.
+`Secrets.swift` is regenerated automatically as a pre-build phase, so changes to `.env` are picked up on every build. Re-run `make setup` (or `make project`) when you change `project.yml` or `.env`.
 
-### 4. Run
+## Daily workflows
 
-Hit ⌘R in Xcode. The calendar icon appears in your menu bar — click it, sign in with Google, then your events will appear.
+Two flows, no Xcode required.
 
-## Install (release build)
-
-The Xcode-run build is debug-configured and tied to Xcode's lifetime — quit Xcode and the menu bar icon goes with it. To run Cally as a real installed app:
-
-First, quit any running Cally instance from the menu bar (otherwise `ditto` will overwrite a binary that's still in use). Then, from the project root:
-
-Build a Release-configured `.app` into a scratch derived-data dir:
+### Dev — iterate on changes
 
 ```sh
-xcodebuild -project Cally.xcodeproj -scheme Cally -configuration Release \
-    -derivedDataPath /tmp/cally-release build
+make dev
 ```
 
-Copy the bundle into `/Applications` (`ditto` preserves macOS metadata better than `cp -R`):
+Builds Debug into `build/dev`, kills any running Cally, and launches the bundle. Edit code → `make dev` → click the menu bar icon. Tokens and event cache live in `~/Library/Application Support/Cally/` (bundle-id keyed, not path keyed), so sign-in survives every rebuild.
+
+If a build fails silently, remove `-quiet` from the `dev` target in the `Makefile` to see Xcode's diagnostics.
+
+### Install — promote to `/Applications`
 
 ```sh
-ditto /tmp/cally-release/Build/Products/Release/Cally.app /Applications/Cally.app
+make install
 ```
 
-Launch the installed copy:
+Builds Release into `build/release`, kills any running Cally, `ditto`s the bundle into `/Applications/Cally.app`, and launches it. Use this when the dev build is solid and you want it surviving reboots.
 
-```sh
-open /Applications/Cally.app
-```
+**One-time gotcha after the first install:** open **Cally → Settings** and toggle **Launch at login** off then on. `SMAppService.mainApp` binds the login item to the bundle's current path, so it needs re-registering after the app moves into `/Applications`. Subsequent `make install` runs reuse the same path, so this is genuinely one-time.
 
-Finally, in **Cally → Settings**, toggle **Launch at login** off then on. `SMAppService.mainApp` binds the login item to the bundle's path, so it needs re-registering against `/Applications/Cally.app` after the move.
+Only one Cally runs at a time — both targets `pkill -x Cally` first, so the dev and installed bundles won't fight over the menu bar.
+
+### Opening in Xcode (optional)
+
+If you want to debug with breakpoints or use Xcode's tooling: `open Cally.xcodeproj` and ⌘R. The Xcode-run build is tied to Xcode's lifetime — quit Xcode and the menu bar icon goes with it.
 
 ## Architecture
 
-```
+```text
 Sources/
 ├── App/                # @main, AppDelegate, AppState
 ├── Auth/               # OAuth (PKCE + loopback), file-based SecretsStore, account/token storage
@@ -96,6 +94,7 @@ Sources/
 ## Decisions
 
 Key choices:
+
 - **Polling, not webhooks**: incremental polling with `syncToken` per `(account, calendar)` avoids running a public HTTPS endpoint.
 - **Personal-only, unsigned**: no Apple Developer Program, run from Xcode locally.
 - **Native `NSMenu`, not `NSPopover`**: gives us system-standard highlighting, scroll behaviour, and Enter-to-launch on the keyboard-selected row. Custom `NSView` menu items broke Enter-key actions, so events are rendered as native `NSMenuItem`s with `attributedTitle` + a 16×16 image holding the calendar colour bar.

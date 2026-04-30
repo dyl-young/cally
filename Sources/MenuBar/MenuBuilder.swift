@@ -26,18 +26,12 @@ struct MenuBuilder {
         menu.addItem(.separator())
 
         if !appState.accounts.isEmpty {
-            let item = actionItem(
+            menu.addItem(actionItem(
                 title: "Open Google Calendar",
                 action: onOpenCalendarWeb,
                 keyEquivalent: "1",
                 modifiers: .command
-            )
-            if let icon = NSImage(named: "GoogleCalendar") {
-                icon.isTemplate = false
-                icon.size = NSSize(width: 16, height: 16)
-                item.image = icon
-            }
-            menu.addItem(item)
+            ))
         }
 
         menu.addItem(actionItem(

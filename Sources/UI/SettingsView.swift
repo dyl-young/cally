@@ -74,6 +74,7 @@ struct SettingsView: View {
 private struct AccountSection: View {
     let account: GoogleAccount
     @EnvironmentObject var appState: AppState
+    @State private var moreExpanded = false
 
     var body: some View {
         let calendars = appState.calendarsForAccount(account.id)
@@ -93,8 +94,15 @@ private struct AccountSection: View {
             }
 
             if !others.isEmpty {
-                DisclosureGroup("More calendars (\(others.count))") {
+                DisclosureGroup(isExpanded: $moreExpanded) {
                     ForEach(others, id: \.ref) { CalendarToggleRow(calendar: $0) }
+                } label: {
+                    Text("More calendars (\(others.count))")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.15)) { moreExpanded.toggle() }
+                        }
                 }
             }
 

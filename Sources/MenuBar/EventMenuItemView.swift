@@ -26,7 +26,7 @@ final class EventMenuItemView: NSView {
 
     private func setUpSubviews() {
         colourBar.wantsLayer = true
-        colourBar.layer?.cornerRadius = 1.5
+        colourBar.layer?.cornerRadius = 2
         colourBar.layer?.backgroundColor = event.calendarColor.cgColor
         colourBar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(colourBar)
@@ -49,8 +49,8 @@ final class EventMenuItemView: NSView {
         NSLayoutConstraint.activate([
             colourBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             colourBar.centerYAnchor.constraint(equalTo: centerYAnchor),
-            colourBar.widthAnchor.constraint(equalToConstant: 3),
-            colourBar.heightAnchor.constraint(equalToConstant: 14),
+            colourBar.widthAnchor.constraint(equalToConstant: 4),
+            colourBar.heightAnchor.constraint(equalToConstant: 16),
 
             timeLabel.leadingAnchor.constraint(equalTo: colourBar.trailingAnchor, constant: 8),
             timeLabel.centerYAnchor.constraint(equalTo: centerYAnchor),

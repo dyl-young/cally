@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import Carbon.HIToolbox
 
 @MainActor
 final class MenuBarController: NSObject, NSPopoverDelegate {
@@ -10,6 +11,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let popover: NSPopover
     private var titleTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    private var hotKey: GlobalHotKey?
 
     init(appState: AppState, syncManager: SyncManager) {
         self.appState = appState
@@ -25,6 +27,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             rootView: PopoverRootView()
                 .environmentObject(appState)
                 .environmentObject(syncManager)
+                .environment(\.popoverDismiss, { [weak self] in self?.popover.performClose(nil) })
         )
 
         if let button = statusItem.button {
@@ -40,6 +43,16 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             .store(in: &cancellables)
 
         scheduleTitleTimer()
+        registerHotKey()
+    }
+
+    private func registerHotKey() {
+        // ⌘⌃K — open/close popover from anywhere
+        let modifiers = UInt32(cmdKey | controlKey)
+        let keyCode = UInt32(kVK_ANSI_K)
+        hotKey = GlobalHotKey(keyCode: keyCode, modifiers: modifiers) { [weak self] in
+            self?.togglePopover()
+        }
     }
 
     func stop() {

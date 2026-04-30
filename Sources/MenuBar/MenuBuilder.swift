@@ -107,12 +107,18 @@ struct MenuBuilder {
     private func eventItem(_ event: CalendarEvent) -> NSMenuItem {
         let item = NSMenuItem()
         item.view = EventMenuItemView(event: event, onClick: onOpenEvent)
+        item.target = MenuActionForwarder.shared
+        item.action = #selector(MenuActionForwarder.invoke(_:))
+        item.representedObject = MenuAction(block: { [onOpenEvent] in onOpenEvent(event) })
         return item
     }
 
     private func meetItem(_ event: CalendarEvent) -> NSMenuItem {
         let item = NSMenuItem()
         item.view = MeetMenuItemView(event: event, onClick: onJoinMeet)
+        item.target = MenuActionForwarder.shared
+        item.action = #selector(MenuActionForwarder.invoke(_:))
+        item.representedObject = MenuAction(block: { [onJoinMeet] in onJoinMeet(event) })
         return item
     }
 

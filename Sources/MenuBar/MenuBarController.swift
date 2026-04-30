@@ -136,7 +136,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let target = TitleFormatter.pickTarget(events: appState.events)
         let title = TitleFormatter.format(events: appState.events)
 
-        button.image = makeBarImage(color: target?.calendarColor)
+        if let target {
+            button.image = makeBarImage(color: target.calendarColor)
+        } else {
+            let icon = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Cally")
+            icon?.isTemplate = true
+            button.image = icon
+        }
+
         if let title {
             button.title = " " + title
             button.imagePosition = .imageLeft
@@ -146,16 +153,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Generates a small rounded vertical bar used as the status item icon. When `color` is nil
-    /// (no target event) we render a template bar that auto-tints with the menu bar appearance.
-    private func makeBarImage(color: NSColor?) -> NSImage {
+    /// Renders the calendar-coloured vertical bar used as the status item icon when an event is
+    /// in view. When nothing's upcoming we fall back to the `calendar` SF Symbol (in refreshTitle).
+    private func makeBarImage(color: NSColor) -> NSImage {
         let size = NSSize(width: 4, height: 16)
         let image = NSImage(size: size)
         image.lockFocus()
-        (color ?? NSColor.black).setFill()
+        color.setFill()
         NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 2, yRadius: 2).fill()
         image.unlockFocus()
-        image.isTemplate = (color == nil)
+        image.isTemplate = false
         image.accessibilityDescription = "Cally"
         return image
     }

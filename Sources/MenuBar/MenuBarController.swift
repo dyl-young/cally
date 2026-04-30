@@ -133,21 +133,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func refreshTitle() {
         guard let button = statusItem.button else { return }
-        let target = TitleFormatter.pickTarget(events: appState.events)
         let title = TitleFormatter.format(events: appState.events)
+        let target = TitleFormatter.pickTarget(events: appState.events)
 
-        if let target {
+        if let title, let target {
             button.image = makeBarImage(color: target.calendarColor)
+            button.title = " " + title
+            button.imagePosition = .imageLeft
         } else {
             let icon = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Cally")
             icon?.isTemplate = true
             button.image = icon
-        }
-
-        if let title {
-            button.title = " " + title
-            button.imagePosition = .imageLeft
-        } else {
             button.title = ""
             button.imagePosition = .imageOnly
         }

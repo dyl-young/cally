@@ -34,7 +34,7 @@ final class GoogleAuth: NSObject {
             throw AuthError.clientIDNotConfigured
         }
 
-        let server = try LoopbackServer()
+        let server = try await LoopbackServer.start()
         loopbackServer = server
         defer {
             server.stop()

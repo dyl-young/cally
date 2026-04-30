@@ -1,38 +1,60 @@
 import Foundation
 import Network
 
+private final class AtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    /// Atomically sets the flag and returns true if this call was the one that set it.
+    func set() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if value { return false }
+        value = true
+        return true
+    }
+}
+
 /// Tiny loopback HTTP server used to receive the OAuth redirect on 127.0.0.1.
 /// Listens for one GET /callback?code=...&state=..., responds with a small HTML page,
 /// then yields the code via continuation.
 final class LoopbackServer: @unchecked Sendable {
-    let port: UInt16
     private let listener: NWListener
     private var continuation: CheckedContinuation<String, Error>?
     private var expectedState: String?
 
-    init() throws {
-        let nwPort = NWEndpoint.Port.any
-        let params = NWParameters.tcp
-        let listener = try NWListener(using: params, on: nwPort)
+    var port: UInt16 { listener.port?.rawValue ?? 0 }
+
+    private init(listener: NWListener) {
         self.listener = listener
-        self.port = listener.port?.rawValue ?? 0
-
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.handle(connection: connection)
-        }
-        listener.start(queue: .global(qos: .userInitiated))
-
-        // The actual port is assigned after start
-        // Wait briefly for it to bind
-        var spins = 0
-        while listener.port == nil && spins < 100 {
-            Thread.sleep(forTimeInterval: 0.01)
-            spins += 1
-        }
     }
 
-    var actualPort: UInt16 {
-        listener.port?.rawValue ?? port
+    static func start() async throws -> LoopbackServer {
+        let listener = try NWListener(using: .tcp, on: .any)
+        let server = LoopbackServer(listener: listener)
+
+        listener.newConnectionHandler = { [weak server] connection in
+            server?.handle(connection: connection)
+        }
+
+        let resumed = AtomicFlag()
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            listener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    if resumed.set() { cont.resume() }
+                case .failed(let err):
+                    if resumed.set() { cont.resume(throwing: err) }
+                case .cancelled:
+                    if resumed.set() {
+                        cont.resume(throwing: AuthError.tokenExchangeFailed("Loopback cancelled"))
+                    }
+                default:
+                    break
+                }
+            }
+            listener.start(queue: .global(qos: .userInitiated))
+        }
+
+        return server
     }
 
     func waitForCode(expectedState: String) async throws -> String {
@@ -58,7 +80,6 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     private func process(request: String, on connection: NWConnection) {
-        // Parse first line: "GET /callback?code=...&state=... HTTP/1.1"
         let firstLine = request.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
         let parts = firstLine.split(separator: " ")
         guard parts.count >= 2 else {
@@ -72,9 +93,8 @@ final class LoopbackServer: @unchecked Sendable {
         let state = items.first(where: { $0.name == "state" })?.value
         let error = items.first(where: { $0.name == "error" })?.value
 
-        let body: String
         if let code, state == expectedState {
-            body = """
+            let body = """
             <!doctype html>
             <html><head><meta charset="utf-8"><title>Cally — Signed In</title>
             <style>body{font-family:-apple-system,Helvetica;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.card{text-align:center;padding:40px}h1{margin:0 0 8px;font-weight:600}p{opacity:.7}</style>
@@ -84,7 +104,7 @@ final class LoopbackServer: @unchecked Sendable {
             continuation?.resume(returning: code)
             continuation = nil
         } else {
-            body = """
+            let body = """
             <h1>Sign-in failed</h1><p>\(error ?? "Unknown error"). You can close this window.</p>
             """
             send(html: body, status: "400 Bad Request", to: connection)

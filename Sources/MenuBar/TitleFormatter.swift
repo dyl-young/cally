@@ -3,6 +3,8 @@ import Foundation
 enum TitleFormatter {
     static let visibilityThreshold: TimeInterval = 12 * 60 * 60
     static let titleMaxChars = 22
+    /// During the first N seconds of a meeting, the title reads "now" instead of "X left".
+    static let nowWindow: TimeInterval = 5 * 60
 
     /// Builds the menu bar title for the next/current event, or nil to hide.
     static func format(events: [CalendarEvent], now: Date = Date()) -> String? {
@@ -12,11 +14,15 @@ enum TitleFormatter {
         if target.isInProgress {
             let remaining = target.end.timeIntervalSince(now)
             if remaining <= 0 { return nil }
+            let elapsed = now.timeIntervalSince(target.start)
+            if elapsed >= 0 && elapsed < nowWindow {
+                return "\(truncated) · now"
+            }
             return "\(truncated) · \(formatDuration(remaining)) left"
         } else {
             let until = target.start.timeIntervalSince(now)
-            if until <= 0 { return "\(truncated) · starting now" }
-            if until <= 30 { return "\(truncated) · starting now" }
+            if until <= 0 { return "\(truncated) · now" }
+            if until <= 30 { return "\(truncated) · now" }
             if until > visibilityThreshold { return nil }
             return "\(truncated) · in \(formatDuration(until))"
         }

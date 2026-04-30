@@ -37,8 +37,8 @@ final class MeetMenuItemView: NSView {
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
             imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 14),
-            imageView.heightAnchor.constraint(equalToConstant: 14),
+            imageView.widthAnchor.constraint(equalToConstant: 18),
+            imageView.heightAnchor.constraint(equalToConstant: 18),
 
             label.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 8),
             label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),

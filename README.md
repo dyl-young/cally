@@ -2,15 +2,17 @@
 
 A tiny native macOS menu bar app that shows your Google Calendar meetings and lets you join Google Meet calls in one click. Personal replacement for the Notion Calendar menu bar.
 
-## Features (v1)
+## Features
 
-- Menu bar shows next meeting + countdown (e.g. `Standup · in 19m`, `Standup · 19m left`)
-- Popover lists Now / Today / Tomorrow / Day-3 events
-- Hover an event with a Meet link → "Join" button
-- macOS notification 1 minute before each meeting (with Join action)
-- Launch at login
-- Native Swift + SwiftUI, ~30–50MB RAM
-- Single Google account; multi-account ready in storage
+- Menu bar shows next meeting + countdown next to a coloured calendar bar (e.g. `Standup · in 19m`, `Standup · 19m left`, `Standup · now`). Falls back to a calendar SF Symbol when nothing is scheduled in the next 12 hours.
+- Native `NSMenu` lists events grouped by **Ending in Xm** (in-progress), **Upcoming in X min** (next event within 30 min), **Today**, **Tomorrow**, and a named day-3.
+- Click any event to open it in Google Calendar; "Join Google Meet meeting" sub-row on current/upcoming events launches the call.
+- Multi-account: link several Google accounts and pick which calendars from each show up.
+- Conflict aware: when two events start at the same time, the title shows `+N` and the menu lists them all in a single section.
+- Local notification 1 minute before each Meet event, with a Join action.
+- Global hotkey ⌘⌃K opens the menu (and Enter on a highlighted event launches it).
+- Launch at login, offline cached events, ⌘1 to open Google Calendar in the browser, ⌘, for Settings.
+- Native Swift 6 + SwiftUI + AppKit, ~30–50 MB RAM.
 
 ## Prerequisites
 
@@ -27,16 +29,16 @@ A tiny native macOS menu bar app that shows your Google Calendar meetings and le
 3. **APIs & Services → Library** → enable **Google Calendar API**
 4. **APIs & Services → OAuth consent screen** → External → add yourself as a test user with the Calendar scopes
 5. **APIs & Services → Credentials** → Create credentials → **OAuth client ID** → Application type **Desktop app**
-6. Copy the **client ID** (looks like `1234-abc.apps.googleusercontent.com`)
+6. Copy the **client ID** and **client secret**
 
-### 2. Drop the client ID into `.env`
+### 2. Drop the credentials into `.env`
 
 ```sh
 cp .env.example .env
-# edit .env and paste your client ID into CALLY_GOOGLE_CLIENT_ID
+# edit .env and paste in CALLY_GOOGLE_CLIENT_ID and CALLY_GOOGLE_CLIENT_SECRET
 ```
 
-`.env` is gitignored. The PKCE flow doesn't use the client secret, so only the client ID is needed.
+`.env` is gitignored. Google's Desktop OAuth flow requires the client secret in the token exchange even with PKCE, so both values are needed. Treat the secret as low-sensitivity (it's "public" in the installed-app sense) but keep it out of source.
 
 ### 3. Bootstrap and open the project
 
@@ -45,7 +47,7 @@ make setup           # generates Sources/Generated/Secrets.swift then Cally.xcod
 open Cally.xcodeproj
 ```
 
-`Secrets.swift` is also regenerated automatically as a pre-build phase, so changes to `.env` are picked up on every build.
+`Secrets.swift` is regenerated automatically as a pre-build phase, so changes to `.env` are picked up on every build.
 
 ### 4. Run
 
@@ -56,29 +58,20 @@ Hit ⌘R in Xcode. The calendar icon appears in your menu bar — click it, sign
 ```
 Sources/
 ├── App/                # @main, AppDelegate, AppState
-├── Auth/               # OAuth (PKCE + loopback), Keychain, account/token storage
+├── Auth/               # OAuth (PKCE + loopback), file-based SecretsStore, account/token storage
 ├── Calendar/           # Google Calendar API client, sync manager (syncToken), cache
-├── MenuBar/            # NSStatusItem controller, title formatter
+├── MenuBar/            # NSStatusItem, NSMenu builder, title formatter, global hotkey
 ├── Notifications/      # 1-min-before banner with Join action
-├── UI/                 # SwiftUI popover, rows, sign-in, settings
+├── UI/                 # Settings window, event grouping
 └── Util/               # NSColor hex helper
 ```
 
 ## Decisions
 
-See `~/.claude/projects/-Users-dylan-young-Desktop-repos-personal-cally/memory/project_cally_overview.md` for the locked v1 spec.
-
 Key choices:
-- **Polling, not webhooks**: incremental polling with `syncToken` avoids running a public HTTPS endpoint
-- **Personal-only, unsigned**: no Apple Developer Program, run from Xcode locally
-- **NSPopover with SwiftUI inside**: more flexible than `NSMenu`, native feel
-- **Meet only**: skip Zoom/Teams URL parsing v1
-
-## Roadmap (v2 ideas, not built)
-
-- Multi-calendar selection in Settings
-- Multi-account
-- Zoom / Teams link detection
-- Global hotkeys (Cmd+Ctrl+J to join next meeting)
-- Custom title threshold
-- Configurable notification lead times
+- **Polling, not webhooks**: incremental polling with `syncToken` per `(account, calendar)` avoids running a public HTTPS endpoint.
+- **Personal-only, unsigned**: no Apple Developer Program, run from Xcode locally.
+- **Native `NSMenu`, not `NSPopover`**: gives us system-standard highlighting, scroll behaviour, and Enter-to-launch on the keyboard-selected row. Custom `NSView` menu items broke Enter-key actions, so events are rendered as native `NSMenuItem`s with `attributedTitle` + a 16×16 image holding the calendar colour bar.
+- **File-based SecretsStore, not Keychain**: ad-hoc signing changes the binary signature on every rebuild, which invalidates Keychain ACLs and triggers password prompts. A `0600` JSON file in Application Support sidesteps this for personal use.
+- **Manually-managed Settings window**: macOS 14+ deprecates the `Settings` SwiftUI scene's open path; a plain `NSWindow` + `NSHostingController` avoids the "Please use SettingsLink" warning.
+- **Meet only**: no Zoom/Teams URL parsing.

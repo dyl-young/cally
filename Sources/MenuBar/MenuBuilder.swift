@@ -74,9 +74,10 @@ struct MenuBuilder {
 
         for section in sections {
             menu.addItem(disabledHeader(section.title))
+            let showMeet = (section.id == "now" || section.id == "upcoming")
             for ev in section.events {
                 menu.addItem(eventItem(ev))
-                if ev.meetLink != nil {
+                if showMeet, ev.meetLink != nil {
                     menu.addItem(meetItem(ev))
                 }
             }

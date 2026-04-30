@@ -42,7 +42,7 @@ enum TitleFormatter {
     /// the next future event. When multiple events tie at the same start (or are simultaneously in
     /// progress), uses a stable tiebreaker so the title doesn't flicker between events on each refresh.
     static func pickTarget(events: [CalendarEvent], now: Date = Date()) -> CalendarEvent? {
-        let active = events.filter { $0.myResponseStatus != "declined" }
+        let active = events.filter(\.isAttending)
         let inProgress = active.filter { $0.isInProgress }
         if !inProgress.isEmpty {
             return chooseStable(from: inProgress)
@@ -54,10 +54,10 @@ enum TitleFormatter {
     }
 
     private static func responsePrefix(for event: CalendarEvent) -> String {
-        switch event.myResponseStatus {
-        case "needsAction": return "? "
-        case "tentative": return "?? "
-        default: return ""
+        switch event.response {
+        case .needsAction: return "? "
+        case .tentative: return "?? "
+        case .accepted, .declined: return ""
         }
     }
 
@@ -76,7 +76,7 @@ enum TitleFormatter {
 
     /// "+N" suffix when the picked event has simultaneous siblings.
     private static func makeConflictSuffix(target: CalendarEvent, events: [CalendarEvent], now: Date) -> String {
-        let active = events.filter { $0.myResponseStatus != "declined" }
+        let active = events.filter(\.isAttending)
         let count: Int
         if target.isInProgress {
             count = active.filter { $0.isInProgress && $0.id != target.id }.count
@@ -86,8 +86,8 @@ enum TitleFormatter {
         return count > 0 ? " +\(count)" : ""
     }
 
-    static func truncate(_ s: String) -> String {
-        s.count > titleMaxChars ? String(s.prefix(titleMaxChars - 1)) + "…" : s
+    static func truncate(_ s: String, to max: Int = titleMaxChars) -> String {
+        s.count > max ? String(s.prefix(max - 1)) + "…" : s
     }
 
     /// "1h 52m", "19m", "0m" — uses ceiling so 3m 45s reads as "4m" (matches Notion's behaviour

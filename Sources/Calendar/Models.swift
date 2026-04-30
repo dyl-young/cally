@@ -8,6 +8,13 @@ struct CalendarRef: Hashable, Codable {
     let calendarID: String
 }
 
+enum ResponseStatus: String {
+    case needsAction
+    case declined
+    case tentative
+    case accepted
+}
+
 struct CalendarEvent: Identifiable, Codable, Equatable, Hashable {
     let id: String
     let accountID: String
@@ -29,6 +36,10 @@ struct CalendarEvent: Identifiable, Codable, Equatable, Hashable {
     let calendarColorHex: String?
 
     var calendarRef: CalendarRef { CalendarRef(accountID: accountID, calendarID: calendarId) }
+
+    var response: ResponseStatus { ResponseStatus(rawValue: myResponseStatus) ?? .accepted }
+    var isDeclined: Bool { response == .declined }
+    var isAttending: Bool { !isDeclined }
 
     var meetLink: URL? {
         if let s = hangoutLink, let u = URL(string: s) { return u }

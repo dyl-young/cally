@@ -107,21 +107,23 @@ struct MenuBuilder {
 
     private func eventItem(_ event: CalendarEvent) -> NSMenuItem {
         let item = NSMenuItem()
-        if event.myResponseStatus == "needsAction" {
+        if event.response == .needsAction {
             // Dotted border requires a custom view — NSAttributedString has no border attribute.
             item.view = EventMenuItemView(
                 timeStr: eventTimeString(event),
                 titleStr: truncatedEventTitle(event),
-                leadingColor: event.calendarColor,
+                barColor: event.calendarColor,
                 onClick: { [onOpenEvent] in onOpenEvent(event) }
             )
         } else {
             item.attributedTitle = eventAttributedTitle(event)
             item.image = colourBarImage(color: event.calendarColor)
-            item.target = MenuActionForwarder.shared
-            item.action = #selector(MenuActionForwarder.invoke(_:))
-            item.representedObject = MenuAction(block: { [onOpenEvent] in onOpenEvent(event) })
         }
+        // Set on both branches so Enter activates the row even for the custom-view path —
+        // AppKit fires item.action on keyboard return but defers click handling to the view.
+        item.target = MenuActionForwarder.shared
+        item.action = #selector(MenuActionForwarder.invoke(_:))
+        item.representedObject = MenuAction(block: { [onOpenEvent] in onOpenEvent(event) })
         return item
     }
 
@@ -139,37 +141,37 @@ struct MenuBuilder {
         return item
     }
 
-    /// Max characters of the event title shown in a menu row. Beyond this the title is truncated
-    /// with an ellipsis so the menu doesn't widen indefinitely for long meeting names.
+    /// Truncated past this so the menu doesn't widen indefinitely for long meeting names.
     private static let eventTitleMaxChars = 32
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = .none
+        return f
+    }()
+
+    private static let timeFont = NSFont.monospacedDigitSystemFont(
+        ofSize: NSFont.systemFontSize,
+        weight: .regular
+    )
+    private static let titleFont = NSFont.menuFont(ofSize: NSFont.systemFontSize)
+
     private func eventTimeString(_ event: CalendarEvent) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter.string(from: event.start)
+        Self.timeFormatter.string(from: event.start)
     }
 
     private func truncatedEventTitle(_ event: CalendarEvent) -> String {
-        let max = Self.eventTitleMaxChars
-        return event.title.count > max
-            ? String(event.title.prefix(max - 1)) + "…"
-            : event.title
+        TitleFormatter.truncate(event.title, to: Self.eventTitleMaxChars)
     }
 
     private func eventAttributedTitle(_ event: CalendarEvent) -> NSAttributedString {
-        let timeFont = NSFont.monospacedDigitSystemFont(
-            ofSize: NSFont.systemFontSize,
-            weight: .regular
-        )
-        let titleFont = NSFont.menuFont(ofSize: NSFont.systemFontSize)
-
         let result = NSMutableAttributedString()
-        result.append(NSAttributedString(string: eventTimeString(event), attributes: [.font: timeFont]))
-        result.append(NSAttributedString(string: "  ·  ", attributes: [.font: titleFont]))
-        result.append(NSAttributedString(string: truncatedEventTitle(event), attributes: [.font: titleFont]))
+        result.append(NSAttributedString(string: eventTimeString(event), attributes: [.font: Self.timeFont]))
+        result.append(NSAttributedString(string: "  ·  ", attributes: [.font: Self.titleFont]))
+        result.append(NSAttributedString(string: truncatedEventTitle(event), attributes: [.font: Self.titleFont]))
 
-        if event.myResponseStatus == "declined" {
+        if event.isDeclined {
             let fullRange = NSRange(location: 0, length: result.length)
             result.addAttribute(
                 .strikethroughStyle,

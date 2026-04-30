@@ -79,7 +79,7 @@ final class MeetingNotifier: NSObject, UNUserNotificationCenterDelegate {
 
         let now = Date()
         for ev in events {
-            guard ev.myResponseStatus != "declined" else { continue }
+            guard ev.isAttending else { continue }
             guard let meetLink = ev.meetLink else { continue }
             let triggerDate = ev.start.addingTimeInterval(-60)
             guard triggerDate > now else { continue }

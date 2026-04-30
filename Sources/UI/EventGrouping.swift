@@ -29,22 +29,27 @@ enum EventGrouping {
             sections.append(EventSection(id: "now", title: label, events: inProgress))
         }
 
-        // Upcoming (next future event within threshold)
-        var upcomingID: String? = nil
-        if let next = events.first(where: { $0.start > now && !$0.isInProgress }) {
+        // Upcoming — every event whose start matches the next-future event's start, when that
+        // start is within the threshold. Pulls in simultaneous events so a 5-min-from-now conflict
+        // surfaces as a single section instead of being split between Upcoming and Today.
+        var upcomingIDs: Set<String> = []
+        if let next = events
+            .filter({ $0.start > now && !$0.isInProgress })
+            .min(by: { $0.start < $1.start }) {
             let until = next.start.timeIntervalSince(now)
             if until <= upcomingThreshold {
+                let upcoming = events.filter { $0.start == next.start && !$0.isInProgress }
                 let mins = max(1, Int(ceil(until / 60)))
                 let label = "Upcoming in \(mins) min"
-                sections.append(EventSection(id: "upcoming", title: label, events: [next]))
-                upcomingID = next.id
+                sections.append(EventSection(id: "upcoming", title: label, events: upcoming))
+                upcomingIDs = Set(upcoming.map(\.id))
             }
         }
 
-        // Today (excluding in-progress and the promoted upcoming event)
+        // Today (excluding in-progress and the promoted upcoming event(s))
         let todayEvents = events.filter {
             !$0.isInProgress &&
-            $0.id != upcomingID &&
+            !upcomingIDs.contains($0.id) &&
             $0.start >= now &&
             $0.start < tomorrow
         }

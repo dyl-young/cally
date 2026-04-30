@@ -12,6 +12,9 @@ struct CalendarEvent: Identifiable, Codable, Equatable, Hashable {
     let id: String
     let accountID: String
     let calendarId: String
+    /// Whether the source calendar is the primary calendar for its account. Stamped at fetch time.
+    /// Used as a tiebreaker when multiple events start at the same moment.
+    let isPrimaryCalendar: Bool
     let title: String
     let start: Date
     let end: Date

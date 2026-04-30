@@ -166,6 +166,7 @@ final class SyncManager: ObservableObject {
     private func fetchCalendar(ref: CalendarRef, account: GoogleAccount) async throws {
         let timeMin = Calendar.current.startOfDay(for: Date())
         let timeMax = Calendar.current.date(byAdding: .day, value: 7, to: timeMin)!
+        let isPrimary = appState.calendars.first(where: { $0.ref == ref })?.primary == true
 
         let token = syncTokens[ref]
         var pageToken: String? = nil
@@ -179,6 +180,7 @@ final class SyncManager: ObservableObject {
                 page = try await client.listEvents(
                     account: account,
                     calendarID: ref.calendarID,
+                    isPrimaryCalendar: isPrimary,
                     timeMin: timeMin,
                     timeMax: timeMax,
                     syncToken: token,

@@ -9,7 +9,8 @@ enum TitleFormatter {
     /// Builds the menu bar title for the next/current event, or nil to hide.
     static func format(events: [CalendarEvent], now: Date = Date()) -> String? {
         guard let target = pickTarget(events: events, now: now) else { return nil }
-        let truncated = truncate(target.title)
+        let conflictSuffix = makeConflictSuffix(target: target, events: events, now: now)
+        let truncated = truncate(target.title) + conflictSuffix
 
         if target.isInProgress {
             let remaining = target.end.timeIntervalSince(now)
@@ -37,11 +38,42 @@ enum TitleFormatter {
         return delta < 120 ? 10 : 30
     }
 
+    /// Selects the event the menu bar should announce. Prefers the in-progress event; falls back to
+    /// the next future event. When multiple events tie at the same start (or are simultaneously in
+    /// progress), uses a stable tiebreaker so the title doesn't flicker between events on each refresh.
     static func pickTarget(events: [CalendarEvent], now: Date = Date()) -> CalendarEvent? {
-        if let inProgress = events.first(where: { $0.isInProgress }) {
-            return inProgress
+        let inProgress = events.filter { $0.isInProgress }
+        if !inProgress.isEmpty {
+            return chooseStable(from: inProgress)
         }
-        return events.first { $0.start > now }
+        let future = events.filter { $0.start > now }
+        guard let earliest = future.min(by: { $0.start < $1.start }) else { return nil }
+        let tied = future.filter { $0.start == earliest.start }
+        return chooseStable(from: tied)
+    }
+
+    /// Tiebreaker: primary calendar > shorter event > alphabetical.
+    private static func chooseStable(from events: [CalendarEvent]) -> CalendarEvent? {
+        events.min { lhs, rhs in
+            if lhs.isPrimaryCalendar != rhs.isPrimaryCalendar {
+                return lhs.isPrimaryCalendar
+            }
+            let lhsDur = lhs.end.timeIntervalSince(lhs.start)
+            let rhsDur = rhs.end.timeIntervalSince(rhs.start)
+            if lhsDur != rhsDur { return lhsDur < rhsDur }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    /// "+N" suffix when the picked event has simultaneous siblings.
+    private static func makeConflictSuffix(target: CalendarEvent, events: [CalendarEvent], now: Date) -> String {
+        let count: Int
+        if target.isInProgress {
+            count = events.filter { $0.isInProgress && $0.id != target.id }.count
+        } else {
+            count = events.filter { $0.id != target.id && $0.start == target.start && $0.start > now }.count
+        }
+        return count > 0 ? " +\(count)" : ""
     }
 
     static func truncate(_ s: String) -> String {

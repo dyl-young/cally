@@ -43,6 +43,7 @@ final class CalendarClient {
     func listEvents(
         account: GoogleAccount,
         calendarID: String,
+        isPrimaryCalendar: Bool,
         timeMin: Date,
         timeMax: Date,
         syncToken: String?,
@@ -92,6 +93,7 @@ final class CalendarClient {
             guard let parsed = item.toEvent(
                 accountID: account.id,
                 calendarID: calendarID,
+                isPrimaryCalendar: isPrimaryCalendar,
                 calendarColorHex: calColor
             ) else { continue }
             events.append(parsed)
@@ -154,7 +156,12 @@ private struct GoogleEventItem: Decodable {
     let htmlLink: String?
     let attendees: [Attendee]?
 
-    func toEvent(accountID: String, calendarID: String, calendarColorHex: String?) -> CalendarEvent? {
+    func toEvent(
+        accountID: String,
+        calendarID: String,
+        isPrimaryCalendar: Bool,
+        calendarColorHex: String?
+    ) -> CalendarEvent? {
         guard let start, let end else { return nil }
         let isAllDay = start.date != nil && start.dateTime == nil
         let startDate: Date?
@@ -182,6 +189,7 @@ private struct GoogleEventItem: Decodable {
             id: id,
             accountID: accountID,
             calendarId: calendarID,
+            isPrimaryCalendar: isPrimaryCalendar,
             title: summary ?? "(No title)",
             start: s,
             end: e,

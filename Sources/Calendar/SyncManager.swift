@@ -9,7 +9,7 @@ final class SyncManager: ObservableObject {
     private var timer: Timer?
     private var syncToken: String?
     private var calendarID: String = "primary"
-    private var isPopoverOpen: Bool = false
+    private var isMenuOpen: Bool = false
     private var inFlight: Bool = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -59,8 +59,8 @@ final class SyncManager: ObservableObject {
         timer = nil
     }
 
-    func setPopoverOpen(_ open: Bool) {
-        isPopoverOpen = open
+    func setMenuOpen(_ open: Bool) {
+        isMenuOpen = open
         if open {
             Task { await refreshNow() }
         }
@@ -155,7 +155,7 @@ final class SyncManager: ObservableObject {
 
     private func scheduleTimer() {
         timer?.invalidate()
-        let interval: TimeInterval = isPopoverOpen ? 60 : 300
+        let interval: TimeInterval = isMenuOpen ? 60 : 300
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.refreshNow() }
         }

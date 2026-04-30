@@ -4,39 +4,35 @@ import Combine
 import Carbon.HIToolbox
 
 @MainActor
-final class MenuBarController: NSObject, NSPopoverDelegate {
+final class MenuBarController: NSObject, NSMenuDelegate {
     private let appState: AppState
     private let syncManager: SyncManager
     private let statusItem: NSStatusItem
-    private let popover: NSPopover
     private var titleTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var hotKey: GlobalHotKey?
+    private var isMenuOpen = false
+    private var pendingRebuild = false
 
     init(appState: AppState, syncManager: SyncManager) {
         self.appState = appState
         self.syncManager = syncManager
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        self.popover = NSPopover()
         super.init()
-
-        popover.behavior = .transient
-        popover.animates = true
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(
-            rootView: PopoverRootView()
-                .environmentObject(appState)
-                .environmentObject(syncManager)
-                .environment(\.popoverDismiss, { [weak self] in self?.popover.performClose(nil) })
-        )
 
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "calendar", accessibilityDescription: "Cally")
             button.image?.isTemplate = true
             button.imagePosition = .imageLeft
-            button.action = #selector(togglePopover)
-            button.target = self
         }
+
+        rebuildMenu()
+
+        appState.$events
+            .merge(with: appState.$authStatus.map { _ in [] }.eraseToAnyPublisher())
+            .merge(with: appState.$isOffline.map { _ in [] }.eraseToAnyPublisher())
+            .sink { [weak self] _ in self?.scheduleRebuild() }
+            .store(in: &cancellables)
 
         appState.$events
             .sink { [weak self] _ in self?.refreshTitle() }
@@ -46,44 +42,79 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         registerHotKey()
     }
 
-    private func registerHotKey() {
-        // ⌘⌃K — open/close popover from anywhere
-        let modifiers = UInt32(cmdKey | controlKey)
-        let keyCode = UInt32(kVK_ANSI_K)
-        hotKey = GlobalHotKey(keyCode: keyCode, modifiers: modifiers) { [weak self] in
-            self?.togglePopover()
-        }
-    }
-
     func stop() {
         titleTimer?.invalidate()
         titleTimer = nil
     }
 
-    @objc private func togglePopover() {
+    private func registerHotKey() {
+        let modifiers = UInt32(cmdKey | controlKey)
+        let keyCode = UInt32(kVK_ANSI_K)
+        hotKey = GlobalHotKey(keyCode: keyCode, modifiers: modifiers) { [weak self] in
+            self?.openMenu()
+        }
+    }
+
+    private func openMenu() {
         guard let button = statusItem.button else { return }
-        if popover.isShown {
-            popover.performClose(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        button.performClick(nil)
+    }
+
+    // MARK: Menu rebuild
+
+    private func scheduleRebuild() {
+        if isMenuOpen {
+            pendingRebuild = true
         } else {
-            NSApp.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            rebuildMenu()
         }
     }
 
-    func popoverDidShow(_ notification: Notification) {
-        syncManager.setPopoverOpen(true)
-        appState.popoverShowCount += 1
-        // Make the SwiftUI hosting view first responder so @FocusState bindings can paint focus.
-        if let host = popover.contentViewController?.view {
-            DispatchQueue.main.async {
-                host.window?.makeFirstResponder(host)
+    private func rebuildMenu() {
+        let menu = MenuBuilder(
+            appState: appState,
+            onSignIn: { [weak self] in
+                guard let self else { return }
+                Task { await SignInController.signIn(appState: self.appState) }
+            },
+            onSignOut: { [weak self] in
+                guard let self else { return }
+                Task { await SignInController.signOut(appState: self.appState) }
+            },
+            onOpenEvent: { [weak self] ev in
+                guard let self else { return }
+                if let s = ev.htmlLink, let u = URL(string: s) { NSWorkspace.shared.open(u) }
+                _ = self
+            },
+            onJoinMeet: { ev in
+                if let url = ev.meetLink { NSWorkspace.shared.open(url) }
+            },
+            onOpenCalendarWeb: {
+                if let u = URL(string: "https://calendar.google.com") { NSWorkspace.shared.open(u) }
             }
+        ).build()
+        menu.delegate = self
+        statusItem.menu = menu
+    }
+
+    // MARK: NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        isMenuOpen = true
+        syncManager.setMenuOpen(true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isMenuOpen = false
+        syncManager.setMenuOpen(false)
+        if pendingRebuild {
+            pendingRebuild = false
+            rebuildMenu()
         }
     }
 
-    func popoverDidClose(_ notification: Notification) {
-        syncManager.setPopoverOpen(false)
-    }
+    // MARK: Title
 
     private func scheduleTitleTimer() {
         titleTimer?.invalidate()

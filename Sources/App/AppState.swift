@@ -18,9 +18,6 @@ final class AppState: ObservableObject {
     @Published var notificationsEnabled: Bool = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
-    /// Increments each time the popover is shown. SwiftUI views observe this to reset focus
-    /// (e.g. when the user reopens via ⌘⌃K, the first item should re-focus).
-    @Published var popoverShowCount: Int = 0
 
     init() {
         if let account = GoogleAccount.loadFromKeychain() {

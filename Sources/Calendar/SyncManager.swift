@@ -159,7 +159,7 @@ final class SyncManager: ObservableObject {
             }
             if lhs.primary == true && rhs.primary != true { return true }
             if rhs.primary == true && lhs.primary != true { return false }
-            return lhs.summary.localizedCaseInsensitiveCompare(rhs.summary) == .orderedAscending
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
         }
     }
 

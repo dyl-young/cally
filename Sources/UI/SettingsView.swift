@@ -76,6 +76,10 @@ private struct AccountSection: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
+        let calendars = appState.calendarsForAccount(account.id)
+        let primary = calendars.first(where: { $0.primary == true })
+        let others = calendars.filter { $0.primary != true }
+
         Section(account.email) {
             if appState.accountsNeedingReconnect.contains(account.id) {
                 Button("Reconnect") {
@@ -84,8 +88,14 @@ private struct AccountSection: View {
                 .buttonStyle(.borderedProminent)
             }
 
-            ForEach(appState.calendarsForAccount(account.id), id: \.ref) { cal in
-                CalendarToggleRow(calendar: cal)
+            if let primary {
+                CalendarToggleRow(calendar: primary)
+            }
+
+            if !others.isEmpty {
+                DisclosureGroup("More calendars (\(others.count))") {
+                    ForEach(others, id: \.ref) { CalendarToggleRow(calendar: $0) }
+                }
             }
 
             Button("Sign out") {
@@ -106,7 +116,7 @@ private struct CalendarToggleRow: View {
                     .fill(swatch)
                     .frame(width: 10, height: 10)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(calendar.summary)
+                    Text(calendar.displayName)
                     if calendar.primary == true {
                         Text("Primary")
                             .font(.caption2)

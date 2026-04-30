@@ -52,6 +52,7 @@ struct CalendarEvent: Identifiable, Codable, Equatable, Hashable {
 struct GoogleCalendarSummary: Codable, Identifiable, Hashable {
     let id: String
     let summary: String
+    let summaryOverride: String?
     let primary: Bool?
     let backgroundColor: String?
     let selected: Bool?
@@ -61,7 +62,10 @@ struct GoogleCalendarSummary: Codable, Identifiable, Hashable {
 
     var ref: CalendarRef { CalendarRef(accountID: accountID, calendarID: id) }
 
+    /// User's local nickname when set, otherwise the owner's name. Matches what Google Calendar's UI displays.
+    var displayName: String { summaryOverride?.isEmpty == false ? summaryOverride! : summary }
+
     enum CodingKeys: String, CodingKey {
-        case id, summary, primary, backgroundColor, selected, accessRole
+        case id, summary, summaryOverride, primary, backgroundColor, selected, accessRole
     }
 }

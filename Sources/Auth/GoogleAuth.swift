@@ -30,7 +30,7 @@ final class GoogleAuth: NSObject {
     private var loopbackServer: LoopbackServer?
 
     func signIn() async throws -> (account: GoogleAccount, tokens: OAuthTokens) {
-        guard !AuthConfig.clientID.hasPrefix("YOUR_") else {
+        guard !AuthConfig.clientID.isEmpty else {
             throw AuthError.clientIDNotConfigured
         }
 

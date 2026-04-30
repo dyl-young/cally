@@ -29,19 +29,23 @@ A tiny native macOS menu bar app that shows your Google Calendar meetings and le
 5. **APIs & Services → Credentials** → Create credentials → **OAuth client ID** → Application type **Desktop app**
 6. Copy the **client ID** (looks like `1234-abc.apps.googleusercontent.com`)
 
-### 2. Plug the client ID into the app
-
-Either edit `Sources/Auth/AuthConfig.swift` and replace `YOUR_GOOGLE_OAUTH_CLIENT_ID...`, or set an environment variable when running from Xcode:
-
-- In Xcode → Edit Scheme → Run → Arguments → Environment Variables
-- Add `CALLY_GOOGLE_CLIENT_ID = <your client ID>`
-
-### 3. Generate and open the project
+### 2. Drop the client ID into `.env`
 
 ```sh
-xcodegen
+cp .env.example .env
+# edit .env and paste your client ID into CALLY_GOOGLE_CLIENT_ID
+```
+
+`.env` is gitignored. The PKCE flow doesn't use the client secret, so only the client ID is needed.
+
+### 3. Bootstrap and open the project
+
+```sh
+make setup           # generates Sources/Generated/Secrets.swift then Cally.xcodeproj
 open Cally.xcodeproj
 ```
+
+`Secrets.swift` is also regenerated automatically as a pre-build phase, so changes to `.env` are picked up on every build.
 
 ### 4. Run
 

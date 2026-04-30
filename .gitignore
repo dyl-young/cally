@@ -20,3 +20,6 @@ Cally.app/
 # Local secrets
 .env
 .env.local
+
+# Auto-generated from .env
+Sources/Generated/

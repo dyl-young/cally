@@ -21,6 +21,12 @@ targets:
   Cally:
     type: application
     platform: macOS
+    preBuildScripts:
+      - name: Generate Secrets.swift from .env
+        script: bash "$SRCROOT/scripts/generate-secrets.sh"
+        outputFiles:
+          - $(SRCROOT)/Sources/Generated/Secrets.swift
+        basedOnDependencyAnalysis: false
     sources:
       - path: Sources
     resources:

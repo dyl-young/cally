@@ -1,15 +1,9 @@
 import Foundation
 
 enum AuthConfig {
-    /// Google OAuth Desktop client ID. Create one at https://console.cloud.google.com
-    /// → APIs & Services → Credentials → Create OAuth client → Desktop app.
-    /// Paste the client ID here. No client secret is needed (PKCE).
-    static let clientID: String = {
-        if let env = ProcessInfo.processInfo.environment["CALLY_GOOGLE_CLIENT_ID"], !env.isEmpty {
-            return env
-        }
-        return "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
-    }()
+    /// Google OAuth Desktop client ID. Provided via `.env` and generated into `Sources/Generated/Secrets.swift`.
+    /// See README.md and `scripts/generate-secrets.sh`.
+    static let clientID: String = Secrets.googleClientID
 
     static let scopes: [String] = [
         "https://www.googleapis.com/auth/calendar.readonly",

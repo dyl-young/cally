@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var hotKey: GlobalHotKey?
     private var isMenuOpen = false
     private var pendingRebuild = false
+    private let settingsController = SettingsWindowController()
 
     init(appState: AppState, syncManager: SyncManager) {
         self.appState = appState
@@ -91,6 +92,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             },
             onOpenCalendarWeb: {
                 if let u = URL(string: "https://calendar.google.com") { NSWorkspace.shared.open(u) }
+            },
+            onOpenSettings: { [weak self] in
+                guard let self else { return }
+                self.settingsController.show(appState: self.appState)
             }
         ).build()
         menu.delegate = self

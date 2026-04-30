@@ -8,6 +8,7 @@ struct MenuBuilder {
     let onOpenEvent: (CalendarEvent) -> Void
     let onJoinMeet: (CalendarEvent) -> Void
     let onOpenCalendarWeb: () -> Void
+    let onOpenSettings: () -> Void
 
     func build() -> NSMenu {
         let menu = NSMenu()
@@ -39,13 +40,12 @@ struct MenuBuilder {
             menu.addItem(item)
         }
 
-        let settings = NSMenuItem(
+        menu.addItem(actionItem(
             title: "Settings…",
-            action: Selector(("showSettingsWindow:")),
-            keyEquivalent: ","
-        )
-        settings.target = nil
-        menu.addItem(settings)
+            action: onOpenSettings,
+            keyEquivalent: ",",
+            modifiers: .command
+        ))
 
         menu.addItem(.separator())
 

@@ -7,9 +7,9 @@ final class SyncManager: ObservableObject {
     private let appState: AppState
     private let client = CalendarClient()
     private var timer: Timer?
-    private var syncTokens: [String: String] = [:]
-    private var eventsPerCalendar: [String: [CalendarEvent]] = [:]
-    private var calendarsLoaded = false
+    private var syncTokens: [CalendarRef: String] = [:]
+    private var eventsPerCalendar: [CalendarRef: [CalendarEvent]] = [:]
+    private var calendarsLoadedFor: Set<String> = []
     private var isMenuOpen: Bool = false
     private var inFlight: Bool = false
     private var cancellables = Set<AnyCancellable>()
@@ -19,33 +19,25 @@ final class SyncManager: ObservableObject {
         if let cached = EventCache.load() {
             syncTokens = cached.syncTokens
             for ev in cached.events {
-                eventsPerCalendar[ev.calendarId, default: []].append(ev)
+                eventsPerCalendar[ev.calendarRef, default: []].append(ev)
             }
             appState.events = filtered(cached.events.sorted { $0.start < $1.start })
             appState.lastSyncDate = cached.lastSync
         }
 
-        appState.$authStatus
-            .removeDuplicates(by: Self.statusEqual)
-            .sink { [weak self] status in
+        // Refresh whenever the linked-account set changes (sign-in adds, sign-out removes).
+        appState.$accounts
+            .removeDuplicates(by: { lhs, rhs in
+                lhs.map(\.id) == rhs.map(\.id)
+            })
+            .dropFirst()
+            .sink { [weak self] _ in
                 guard let self else { return }
-                if case .signedIn = status {
-                    self.calendarsLoaded = false
-                    self.syncTokens.removeAll()
-                    self.eventsPerCalendar.removeAll()
-                    Task { @MainActor in await self.refreshNow() }
-                } else if case .signedOut = status {
-                    self.stop()
-                    self.appState.events = []
-                    self.appState.calendars = []
-                    self.calendarsLoaded = false
-                    self.syncTokens.removeAll()
-                    self.eventsPerCalendar.removeAll()
-                }
+                Task { @MainActor in await self.refreshNow() }
             }
             .store(in: &cancellables)
 
-        appState.$selectedCalendarIDs
+        appState.$selectedCalendars
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in
@@ -55,19 +47,8 @@ final class SyncManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    private static func statusEqual(_ a: AppState.AuthStatus, _ b: AppState.AuthStatus) -> Bool {
-        switch (a, b) {
-        case (.signedOut, .signedOut), (.signingIn, .signingIn), (.needsReconnect, .needsReconnect):
-            return true
-        case (.signedIn(let x), .signedIn(let y)):
-            return x.id == y.id
-        default:
-            return false
-        }
-    }
-
     func start() async {
-        guard appState.currentAccount != nil else { return }
+        guard !appState.accounts.isEmpty else { return }
         scheduleTimer()
         await refreshNow()
     }
@@ -86,63 +67,109 @@ final class SyncManager: ObservableObject {
     }
 
     func refreshNow() async {
-        guard let account = appState.currentAccount, !inFlight else { return }
+        guard !appState.accounts.isEmpty, !inFlight else {
+            // No accounts — wipe stale state.
+            if appState.accounts.isEmpty {
+                eventsPerCalendar.removeAll()
+                syncTokens.removeAll()
+                appState.events = []
+                appState.calendars = []
+                calendarsLoadedFor.removeAll()
+                EventCache.clear()
+            }
+            return
+        }
         inFlight = true
         defer { inFlight = false }
 
-        do {
-            try await loadCalendarsIfNeeded(account: account)
-
-            // Drop state for calendars no longer selected.
-            for calID in Array(eventsPerCalendar.keys) where !appState.selectedCalendarIDs.contains(calID) {
-                eventsPerCalendar.removeValue(forKey: calID)
-                syncTokens.removeValue(forKey: calID)
+        // Refresh calendar lists for each account.
+        var allCalendars: [GoogleCalendarSummary] = []
+        for account in appState.accounts {
+            do {
+                let cals = try await loadCalendars(for: account)
+                allCalendars.append(contentsOf: cals)
+                appState.accountsNeedingReconnect.remove(account.id)
+            } catch {
+                if case AuthError.tokenExchangeFailed = error {
+                    appState.accountsNeedingReconnect.insert(account.id)
+                } else if (error as NSError).domain == NSURLErrorDomain {
+                    appState.isOffline = true
+                } else {
+                    appState.lastSyncError = error.localizedDescription
+                }
             }
+        }
+        appState.calendars = sortedCalendars(allCalendars)
 
-            // Fetch each selected calendar.
-            for calID in appState.selectedCalendarIDs {
-                try await fetchCalendar(calID, account: account)
+        // First-run-per-account default: if nothing's selected for an account yet, select its primary calendar.
+        for account in appState.accounts {
+            let hasAnySelectedForAccount = appState.selectedCalendars.contains { $0.accountID == account.id }
+            if !hasAnySelectedForAccount,
+               let primary = allCalendars.first(where: { $0.accountID == account.id && $0.primary == true }) {
+                var s = appState.selectedCalendars
+                s.insert(primary.ref)
+                appState.selectedCalendars = s
             }
+        }
 
-            publishAndCache()
+        // Drop state for refs that aren't selected anymore.
+        for ref in Array(eventsPerCalendar.keys) where !appState.selectedCalendars.contains(ref) {
+            eventsPerCalendar.removeValue(forKey: ref)
+            syncTokens.removeValue(forKey: ref)
+        }
+
+        // Fetch each selected calendar.
+        let accountsByID: [String: GoogleAccount] = Dictionary(uniqueKeysWithValues: appState.accounts.map { ($0.id, $0) })
+        var hadError = false
+        for ref in appState.selectedCalendars {
+            guard let account = accountsByID[ref.accountID] else { continue }
+            do {
+                try await fetchCalendar(ref: ref, account: account)
+            } catch CalendarClientError.syncTokenInvalid {
+                continue // already retried inside fetchCalendar
+            } catch {
+                hadError = true
+                if case AuthError.tokenExchangeFailed = error {
+                    appState.accountsNeedingReconnect.insert(account.id)
+                } else if (error as NSError).domain == NSURLErrorDomain {
+                    appState.isOffline = true
+                } else {
+                    appState.lastSyncError = error.localizedDescription
+                }
+            }
+        }
+
+        publishAndCache()
+        if !hadError {
             appState.lastSyncError = nil
             appState.isOffline = false
-        } catch {
-            if (error as NSError).domain == NSURLErrorDomain {
-                appState.isOffline = true
-            } else {
-                appState.lastSyncError = error.localizedDescription
-            }
-            if case AuthError.tokenExchangeFailed = error {
-                appState.authStatus = .needsReconnect
-            }
         }
     }
 
-    private func loadCalendarsIfNeeded(account: GoogleAccount) async throws {
-        guard !calendarsLoaded || appState.calendars.isEmpty else { return }
+    private func loadCalendars(for account: GoogleAccount) async throws -> [GoogleCalendarSummary] {
         let cals = try await client.listCalendars(account: account)
-        appState.calendars = cals.sorted { lhs, rhs in
-            // Primary first, then alphabetical.
+        calendarsLoadedFor.insert(account.id)
+        return cals
+    }
+
+    private func sortedCalendars(_ cals: [GoogleCalendarSummary]) -> [GoogleCalendarSummary] {
+        cals.sorted { lhs, rhs in
+            if lhs.accountID != rhs.accountID {
+                return lhs.accountID < rhs.accountID
+            }
             if lhs.primary == true && rhs.primary != true { return true }
             if rhs.primary == true && lhs.primary != true { return false }
             return lhs.summary.localizedCaseInsensitiveCompare(rhs.summary) == .orderedAscending
         }
-        if appState.selectedCalendarIDs.isEmpty {
-            if let primary = cals.first(where: { $0.primary == true }) {
-                appState.selectedCalendarIDs = [primary.id]
-            }
-        }
-        calendarsLoaded = true
     }
 
-    private func fetchCalendar(_ calendarID: String, account: GoogleAccount) async throws {
+    private func fetchCalendar(ref: CalendarRef, account: GoogleAccount) async throws {
         let timeMin = Calendar.current.startOfDay(for: Date())
         let timeMax = Calendar.current.date(byAdding: .day, value: 7, to: timeMin)!
 
-        let token = syncTokens[calendarID]
+        let token = syncTokens[ref]
         var pageToken: String? = nil
-        var working: [CalendarEvent] = eventsPerCalendar[calendarID] ?? []
+        var working: [CalendarEvent] = eventsPerCalendar[ref] ?? []
         var deletedIDs: Set<String> = []
         var newSyncToken: String? = nil
 
@@ -151,16 +178,16 @@ final class SyncManager: ObservableObject {
             do {
                 page = try await client.listEvents(
                     account: account,
-                    calendarID: calendarID,
+                    calendarID: ref.calendarID,
                     timeMin: timeMin,
                     timeMax: timeMax,
                     syncToken: token,
                     pageToken: pageToken
                 )
             } catch CalendarClientError.syncTokenInvalid {
-                syncTokens.removeValue(forKey: calendarID)
-                eventsPerCalendar.removeValue(forKey: calendarID)
-                try await fetchCalendar(calendarID, account: account)
+                syncTokens.removeValue(forKey: ref)
+                eventsPerCalendar.removeValue(forKey: ref)
+                try await fetchCalendar(ref: ref, account: account)
                 return
             }
 
@@ -176,18 +203,16 @@ final class SyncManager: ObservableObject {
             if let t = page.nextSyncToken { newSyncToken = t }
         } while pageToken != nil
 
-        // Full sync (no prior token) — clamp to the requested window.
         if token == nil {
             working = working.filter { $0.end >= timeMin && $0.start <= timeMax }
         }
         if !deletedIDs.isEmpty {
             working.removeAll { deletedIDs.contains($0.id) }
         }
-        // Drop fully-past events.
         working.removeAll { $0.end < Date() && !$0.isInProgress }
 
-        eventsPerCalendar[calendarID] = working
-        if let t = newSyncToken { syncTokens[calendarID] = t }
+        eventsPerCalendar[ref] = working
+        if let t = newSyncToken { syncTokens[ref] = t }
     }
 
     private func publishAndCache() {

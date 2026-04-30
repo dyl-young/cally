@@ -1,0 +1,22 @@
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+.build/
+*.swiftpm/
+
+# Generated
+Cally.app/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Local secrets
+.env
+.env.local

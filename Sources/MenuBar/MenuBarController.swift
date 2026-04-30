@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var hotKey: GlobalHotKey?
     private var isMenuOpen = false
     private var pendingRebuild = false
+    private var keyMonitor: Any?
 
     init(appState: AppState, syncManager: SyncManager) {
         self.appState = appState
@@ -102,11 +103,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         isMenuOpen = true
         syncManager.setMenuOpen(true)
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak menu] event in
+            // 36 = Return, 76 = Numpad Enter
+            guard event.keyCode == 36 || event.keyCode == 76,
+                  let menu,
+                  let item = menu.highlightedItem,
+                  item.view != nil,
+                  let action = item.representedObject as? MenuAction else {
+                return event
+            }
+            menu.cancelTracking()
+            DispatchQueue.main.async { action.block() }
+            return nil
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
         syncManager.setMenuOpen(false)
+        if let m = keyMonitor { NSEvent.removeMonitor(m) }
+        keyMonitor = nil
         if pendingRebuild {
             pendingRebuild = false
             rebuildMenu()

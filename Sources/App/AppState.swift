@@ -19,6 +19,19 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
 
+    /// Full list of the user's Google calendars, refreshed on sign-in / sync.
+    @Published var calendars: [GoogleCalendarSummary] = []
+
+    /// Calendar IDs the user has selected to display events from. Persisted.
+    @Published var selectedCalendarIDs: Set<String> = {
+        let stored = UserDefaults.standard.stringArray(forKey: "selectedCalendarIDs") ?? []
+        return Set(stored)
+    }() {
+        didSet {
+            UserDefaults.standard.set(Array(selectedCalendarIDs), forKey: "selectedCalendarIDs")
+        }
+    }
+
     init() {
         if let account = GoogleAccount.loadFromKeychain() {
             authStatus = .signedIn(account: account)
